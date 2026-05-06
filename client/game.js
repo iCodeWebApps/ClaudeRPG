@@ -215,6 +215,15 @@ class VillageScene extends Phaser.Scene {
     v.bubble.setText(map.label);
   }
 
+  // Show the last ~72 chars of Claude's actual text in the speech bubble.
+  handleText(ev) {
+    const agentId = ev.agent || 'main';
+    const v = this.villagers[agentId];
+    if (!v) return;
+    const snippet = ev.text.length > 72 ? '...' + ev.text.slice(-72) : ev.text;
+    v.bubble.setText(snippet);
+  }
+
   // ── WEBSOCKET ────────────────────────────────────────────────────────────
   connectWebSocket() {
     const statusEl = document.getElementById('status');
@@ -229,7 +238,8 @@ class VillageScene extends Phaser.Scene {
     ws.onmessage = (msg) => {
       try {
         const ev = JSON.parse(msg.data);
-        if (ev.type === 'tool_use') this.handleEvent(ev);
+        if (ev.type === 'tool_use')       this.handleEvent(ev);
+        if (ev.type === 'assistant_text') this.handleText(ev);
       } catch {}
     };
 
