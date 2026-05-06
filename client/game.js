@@ -232,6 +232,26 @@ class VillageScene extends Phaser.Scene {
         });
       };
 
+      // ── Drag to relocate ───────────────────────────────────────────
+      chicken.setInteractive();
+      this.input.setDraggable(chicken);
+
+      chicken.on('dragstart', () => {
+        this.tweens.killTweensOf(chicken); // stop current wander
+        chicken.setDepth(25);
+      });
+
+      chicken.on('drag', (pointer, dragX, dragY) => {
+        chicken.setPosition(dragX, dragY);
+      });
+
+      chicken.on('dragend', () => {
+        chicken.setDepth(8);
+        home.x = chicken.x;   // update home so wander stays in new area
+        home.y = chicken.y;
+        this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
+      });
+
       // Stagger start so they don't all sync up
       this.time.delayedCall(Phaser.Math.Between(0, 2500), wander);
     }
@@ -323,6 +343,35 @@ class VillageScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(15);
 
     this.villagers[agentId] = { sprite, label, bubble, cfg };
+
+    // ── Drag to reposition ────────────────────────────────────────────
+    sprite.setInteractive();
+    this.input.setDraggable(sprite);
+
+    sprite.on('dragstart', () => {
+      sprite.body.setEnable(false);       // physics off while held
+      this.tweens.killTweensOf(sprite);
+      sprite.setDepth(25);               // float above everything
+    });
+
+    sprite.on('drag', (pointer, dragX, dragY) => {
+      sprite.setPosition(dragX, dragY);
+      label.setPosition(dragX, dragY - 40);
+      bubble.setPosition(dragX, dragY + 30);
+    });
+
+    sprite.on('dragend', () => {
+      sprite.body.setEnable(true);
+      sprite.body.reset(sprite.x, sprite.y); // sync body to dropped position
+      sprite.setDepth(5);
+      sprite.targetX = sprite.x;
+      sprite.targetY = sprite.y;
+      sprite.arrived = true;
+      sprite.path    = null;
+      sprite.looking = false;
+      sprite.idleMs  = 0;
+    });
+
     return this.villagers[agentId];
   }
 
