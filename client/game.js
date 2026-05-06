@@ -110,7 +110,7 @@ class VillageScene extends Phaser.Scene {
     const pos = ZONES.green;
 
     const sprite = this.add.sprite(pos.x, pos.y, cfg.key)
-      .setScale(0.72).setTint(cfg.tint).setDepth(5); // depth 5: under roofs (depth 6)
+      .setScale(0.72).setTint(cfg.tint).setDepth(7); // depth 7: above roofs — always visible
     sprite.play(`${cfg.key}-idle`);
 
     // Short ID — name label floats above roofs (depth 15) so always readable
