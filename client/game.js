@@ -632,7 +632,7 @@ class VillageScene extends Phaser.Scene {
     });
 
     doodle.on('dragend', () => {
-      doodle.setDepth(8);
+      doodle.setDepth(5);
       home.x = doodle.x;
       home.y = doodle.y;
       this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
@@ -766,7 +766,7 @@ class VillageScene extends Phaser.Scene {
     });
 
     dog.on('dragend', () => {
-      dog.setDepth(8);
+      dog.setDepth(5);
       home.x = dog.x;
       home.y = dog.y;
       this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
