@@ -107,7 +107,7 @@ class VillageScene extends Phaser.Scene {
   // ── VILLAGER ────────────────────────────────────────────────────────────
   spawnVillager(agentId) {
     const cfg = SPRITES[spriteIdx++ % SPRITES.length];
-    const pos = ZONES.square;
+    const pos = ZONES.green;
 
     const sprite = this.add.sprite(pos.x, pos.y, cfg.key)
       .setScale(0.72).setTint(cfg.tint).setDepth(5); // depth 5: under roofs (depth 6)
