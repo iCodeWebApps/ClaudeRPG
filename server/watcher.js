@@ -8,12 +8,14 @@ const chokidar = require('chokidar');
 
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
-// Extract a usable agent ID from the JSONL file path.
-// Main session files:  .../projects/<project>/<uuid>.jsonl          → 'main'
-// Subagent files:      .../subagents/agent-<hex>.jsonl              → 'agent-<hex>'
+// Extract a unique agent ID from the JSONL file path.
+// Subagent files:   .../subagents/agent-<hex>.jsonl  → first 12 chars of agent-<hex>
+// Session files:    .../<uuid>.jsonl                  → first 8 chars of uuid
 function agentIdFromPath(filePath) {
-  const m = filePath.match(/subagents[/\\](agent-[^/\\]+)\.jsonl$/i);
-  return m ? m[1] : 'main';
+  const sub = filePath.match(/subagents[/\\](agent-[^/\\]+)\.jsonl$/i);
+  if (sub) return sub[1].slice(0, 12);
+  const ses = filePath.match(/([a-f0-9-]{36})\.jsonl$/i);
+  return ses ? ses[1].slice(0, 8) : 'unknown';
 }
 
 // Parse one JSONL event and call broadcast() if it's actionable.

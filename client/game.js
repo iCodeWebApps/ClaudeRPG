@@ -167,15 +167,15 @@ class VillageScene extends Phaser.Scene {
 
   // ── VILLAGER ────────────────────────────────────────────────────────────
   spawnVillager(agentId) {
-    const isMain = agentId === 'main';
-    const cfg = isMain ? SPRITES[0] : SPRITES[(spriteIdx++ % (SPRITES.length - 1)) + 1];
+    const cfg = SPRITES[spriteIdx++ % SPRITES.length];
     const pos = ZONES.square;
 
     const sprite = this.add.sprite(pos.x, pos.y, cfg.key)
       .setScale(0.72).setTint(cfg.tint).setDepth(10);
     sprite.play(`${cfg.key}-idle`);
 
-    const name = isMain ? 'Claude' : agentId.slice(0, 8);
+    // Show the short ID — subagents start with 'agent-', sessions are 8-char UUIDs
+    const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
     const labelStyle = { fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
                          backgroundColor: '#00000099', padding: { x: 3, y: 1 } };
     const bubbleStyle = { fontSize: '8px', color: '#aaffaa', fontFamily: 'monospace',
@@ -232,7 +232,7 @@ class VillageScene extends Phaser.Scene {
     ws.onopen = () => {
       statusEl.textContent = '● connected';
       statusEl.className = 'connected';
-      this.spawnVillager('main');
+      // Villagers spawn on demand as events arrive — no pre-spawn needed
     };
 
     ws.onmessage = (msg) => {
