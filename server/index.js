@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const open = require('open');
 const { setupHooks, teardownHooks } = require('./hooks.js');
 
 const PORT = 3131;
@@ -40,9 +39,10 @@ app.post('/event', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`ClaudeRPG running at http://localhost:${PORT}`);
   setupHooks();
+  const { default: open } = await import('open');
   open(`http://localhost:${PORT}`);
 });
 
