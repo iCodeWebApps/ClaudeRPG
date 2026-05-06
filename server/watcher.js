@@ -19,7 +19,7 @@ function agentIdFromPath(filePath) {
 }
 
 // Parse one JSONL event and call broadcast() if it's actionable.
-function processLine(raw, agentId, broadcast, displayName) {
+function processLine(raw, agentId, broadcast) {
   let event;
   try { event = JSON.parse(raw); } catch { return; }
 
@@ -32,24 +32,22 @@ function processLine(raw, agentId, broadcast, displayName) {
   for (const block of content) {
     if (block.type === 'tool_use') {
       broadcast({
-        type:        'tool_use',
-        tool:        block.name,
-        agent:       agentId,
-        displayName: displayName || null,
-        sessionId:   event.sessionId,
-        timestamp:   Date.now(),
+        type:      'tool_use',
+        tool:      block.name,
+        agent:     agentId,
+        sessionId: event.sessionId,
+        timestamp: Date.now(),
       });
     }
 
     // Emit the last ~100 chars of Claude's text so speech bubbles show real output.
     if (block.type === 'text' && block.text?.trim()) {
       broadcast({
-        type:        'assistant_text',
-        text:        block.text.trim(),
-        agent:       agentId,
-        displayName: displayName || null,
-        sessionId:   event.sessionId,
-        timestamp:   Date.now(),
+        type:      'assistant_text',
+        text:      block.text.trim(),
+        agent:     agentId,
+        sessionId: event.sessionId,
+        timestamp: Date.now(),
       });
     }
   }
@@ -58,7 +56,7 @@ function processLine(raw, agentId, broadcast, displayName) {
 // Read only the bytes added since last read, parse new lines.
 const offsets = {};
 
-function drain(filePath, broadcast, displayName) {
+function drain(filePath, broadcast) {
   const agentId = agentIdFromPath(filePath);
 
   let stat;
@@ -79,7 +77,7 @@ function drain(filePath, broadcast, displayName) {
   offsets[filePath] = stat.size;
 
   for (const line of chunk.toString('utf8').split('\n')) {
-    if (line.trim()) processLine(line, agentId, broadcast, displayName);
+    if (line.trim()) processLine(line, agentId, broadcast);
   }
 }
 
@@ -87,7 +85,7 @@ function drain(filePath, broadcast, displayName) {
 // Reads only the last 8KB of files modified within the past 8 hours —
 // finds the most recent tool_use event and re-broadcasts it so the
 // server's villagerState map (and any connected browsers) get populated.
-function replayRecent(broadcast, displayName) {
+function replayRecent(broadcast) {
   const cutoff = Date.now() - 8 * 60 * 60 * 1000;
 
   function scan(dir) {
@@ -127,7 +125,7 @@ function replayRecent(broadcast, displayName) {
             if (!Array.isArray(content)) continue;
             const tool = content.find(b => b.type === 'tool_use');
             if (!tool) continue;
-            broadcast({ type: 'tool_use', tool: tool.name, agent: agentId, displayName: displayName || null, sessionId: event.sessionId, timestamp: Date.now() });
+            broadcast({ type: 'tool_use', tool: tool.name, agent: agentId, sessionId: event.sessionId, timestamp: Date.now() });
             break;
           } catch {}
         }
@@ -138,9 +136,9 @@ function replayRecent(broadcast, displayName) {
   scan(PROJECTS_DIR);
 }
 
-module.exports = function startWatcher(broadcast, displayName) {
+module.exports = function startWatcher(broadcast) {
   // On startup: seed offsets and replay last-known position for active sessions
-  replayRecent(broadcast, displayName);
+  replayRecent(broadcast);
 
   // Watch for new files and changes.
   const watcher = chokidar.watch(`${PROJECTS_DIR}/**/*.jsonl`, {
@@ -153,12 +151,12 @@ module.exports = function startWatcher(broadcast, displayName) {
   watcher.on('add', (filePath) => {
     // Brand-new session file — start from the beginning.
     if (offsets[filePath] === undefined) offsets[filePath] = 0;
-    drain(filePath, broadcast, displayName);
+    drain(filePath, broadcast);
     console.log(`ClaudeRPG watcher: new session ${path.basename(filePath)}`);
   });
 
   watcher.on('change', (filePath) => {
-    drain(filePath, broadcast, displayName);
+    drain(filePath, broadcast);
   });
 
   watcher.on('error', (err) => {
