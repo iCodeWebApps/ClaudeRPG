@@ -1,0 +1,22 @@
+{
+  "name": "claude-rpg",
+  "version": "0.1.0",
+  "description": "Visualize Claude Code agents as villagers in a pixel art RPG",
+  "bin": {
+    "claude-rpg": "./bin/claude-rpg.js"
+  },
+  "scripts": {
+    "start": "node bin/claude-rpg.js",
+    "dev": "node bin/claude-rpg.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "open": "^9.1.0",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["claude", "claude-code", "rpg", "visualization", "agents"],
+  "license": "MIT"
+}
