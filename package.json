@@ -2,9 +2,17 @@
   "name": "claude-rpg",
   "version": "0.1.0",
   "description": "Visualize Claude Code agents as villagers in a pixel art RPG",
+  "main": "server/index.js",
   "bin": {
     "claude-rpg": "./bin/claude-rpg.js"
   },
+  "files": [
+    "bin/",
+    "server/",
+    "client/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node bin/claude-rpg.js",
     "dev": "node bin/claude-rpg.js"
@@ -23,8 +31,14 @@
     "claude-code",
     "rpg",
     "visualization",
-    "agents"
+    "agents",
+    "pixel-art"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iCodeWebApps/ClaudeRPG.git"
+  },
+  "homepage": "https://github.com/iCodeWebApps/ClaudeRPG#readme",
   "license": "MIT",
   "devDependencies": {
     "pngjs": "^7.0.0"
