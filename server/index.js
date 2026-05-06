@@ -2,10 +2,22 @@ const express    = require('express');
 const http       = require('http');
 const WebSocket  = require('ws');
 const path       = require('path');
+const fs         = require('fs');
+const os         = require('os');
 const startWatcher = require('./watcher.js');
 
 const PORT = 3131;
 const app  = express();
+
+// Optional display name — set in ~/.claude-rpg.json as { "name": "Daniil" }
+let displayName = null;
+try {
+  const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude-rpg.json'), 'utf8'));
+  if (typeof cfg.name === 'string' && cfg.name.trim()) displayName = cfg.name.trim();
+} catch {}
+
+if (displayName) console.log(`ClaudeRPG: display name → "${displayName}"`);
+else console.log('ClaudeRPG: no ~/.claude-rpg.json — using session IDs as labels');
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname, '../client')));
@@ -58,7 +70,7 @@ app.post('/save-asset', (req, res) => {
 
 server.listen(PORT, async () => {
   console.log(`ClaudeRPG running at http://localhost:${PORT}`);
-  startWatcher(broadcast);
+  startWatcher(broadcast, displayName);
   const { default: open } = await import('open');
   open(`http://localhost:${PORT}`);
 });

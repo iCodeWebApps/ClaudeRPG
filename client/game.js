@@ -238,7 +238,10 @@ class VillageScene extends Phaser.Scene {
     const W = 240, PAD = 7, LH = 13;
     let cy = PAD;
 
-    const title = this.add.text(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
+    const titleStr = v.displayName
+      ? `◆ ${v.displayName} (${agentId.slice(0,8)})`
+      : `◆ ${agentId.slice(0,14)}`;
+    const title = this.add.text(PAD, cy, titleStr, {
       fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0);
     this.histPanel.add(title); this.histPanel._lines.push(title);
@@ -390,7 +393,7 @@ class VillageScene extends Phaser.Scene {
   }
 
   // ── VILLAGER ────────────────────────────────────────────────────────────
-  spawnVillager(agentId) {
+  spawnVillager(agentId, displayName) {
     const cfg = SPRITES[spriteIdx++ % SPRITES.length];
     const pos = ZONES.green;
 
@@ -418,8 +421,14 @@ class VillageScene extends Phaser.Scene {
     sprite.idleWait = Phaser.Math.Between(2000, 6000);
     sprite.looking  = false;
 
-    const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
-    const label  = this.add.text(pos.x, pos.y - 40, name, {
+    const isSubagent = agentId.startsWith('agent-');
+    let labelText;
+    if (displayName) {
+      labelText = isSubagent ? `${displayName} [sub]` : displayName;
+    } else {
+      labelText = isSubagent ? agentId.slice(0, 10) : agentId.slice(0, 8);
+    }
+    const label  = this.add.text(pos.x, pos.y - 40, labelText, {
       fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
       backgroundColor: '#00000099', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 1).setDepth(15);
@@ -428,7 +437,7 @@ class VillageScene extends Phaser.Scene {
       backgroundColor: '#00000088', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 0).setDepth(15);
 
-    this.villagers[agentId] = { sprite, label, bubble, cfg };
+    this.villagers[agentId] = { sprite, label, bubble, cfg, displayName: displayName || null };
 
     // ── Click to show history ─────────────────────────────────────────
     sprite.setInteractive();
@@ -484,7 +493,7 @@ class VillageScene extends Phaser.Scene {
   handleEvent(event) {
     const agentId = event.agent || 'main';
     let v = this.villagers[agentId];
-    if (!v) v = this.spawnVillager(agentId);
+    if (!v) v = this.spawnVillager(agentId, event.displayName);
 
     const dest  = randomDest();
     const destX = dest.x;
