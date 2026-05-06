@@ -62,7 +62,6 @@ class VillageScene extends Phaser.Scene {
 
   create() {
     // ── Animations ─────────────────────────────────────────────────────
-    // LPC walk layout: row 0 = up, 1 = left, 2 = down, 3 = right (9 frames each)
     for (const key of ['soldier', 'altcolor', 'princess']) {
       this.anims.create({ key: `${key}-up`,    frames: this.anims.generateFrameNumbers(key, { start: 0,  end: 8  }), frameRate: 10, repeat: -1 });
       this.anims.create({ key: `${key}-left`,  frames: this.anims.generateFrameNumbers(key, { start: 9,  end: 17 }), frameRate: 10, repeat: -1 });
@@ -70,6 +69,10 @@ class VillageScene extends Phaser.Scene {
       this.anims.create({ key: `${key}-right`, frames: this.anims.generateFrameNumbers(key, { start: 27, end: 35 }), frameRate: 10, repeat: -1 });
       this.anims.create({ key: `${key}-idle`,  frames: [{ key, frame: 18 }], frameRate: 1 });
     }
+
+    // ── Physics group — collider added once, handles all villager separation
+    this.villagerGroup = this.physics.add.group();
+    this.physics.add.collider(this.villagerGroup, this.villagerGroup);
 
     this.buildMap();
     this.spawnChickens();
@@ -159,19 +162,30 @@ class VillageScene extends Phaser.Scene {
     const cfg = SPRITES[spriteIdx++ % SPRITES.length];
     const pos = ZONES.green;
 
-    const sprite = this.add.sprite(pos.x, pos.y, cfg.key)
-      .setScale(0.72).setTint(cfg.tint).setDepth(7); // depth 7: above roofs — always visible
+    // Physics sprite — circular body for natural separation
+    const sprite = this.physics.add.sprite(pos.x, pos.y, cfg.key)
+      .setScale(0.72).setTint(cfg.tint).setDepth(7);
+    // Circular body: radius 18px in texture space (64×64), centered
+    sprite.setCircle(18, 14, 14);
+    sprite.body.setCollideWorldBounds(true);
+    sprite.body.setMaxVelocity(120, 120);
     sprite.play(`${cfg.key}-idle`);
 
-    // Short ID — name label floats above roofs (depth 15) so always readable
-    const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
-    const labelStyle = { fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
-                         backgroundColor: '#00000099', padding: { x: 3, y: 1 } };
-    const bubbleStyle = { fontSize: '8px', color: '#aaffaa', fontFamily: 'monospace',
-                          backgroundColor: '#00000088', padding: { x: 3, y: 1 } };
+    this.villagerGroup.add(sprite);
 
-    const label  = this.add.text(pos.x, pos.y - 40, name, labelStyle).setOrigin(0.5, 1).setDepth(15);
-    const bubble = this.add.text(pos.x, pos.y + 30, 'wandering...', bubbleStyle).setOrigin(0.5, 0).setDepth(15);
+    // Target the villager walks toward (set by handleEvent)
+    sprite.targetX = pos.x;
+    sprite.targetY = pos.y;
+
+    const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
+    const label  = this.add.text(pos.x, pos.y - 40, name, {
+      fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
+      backgroundColor: '#00000099', padding: { x: 3, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(15);
+    const bubble = this.add.text(pos.x, pos.y + 30, 'wandering...', {
+      fontSize: '8px', color: '#aaffaa', fontFamily: 'monospace',
+      backgroundColor: '#00000088', padding: { x: 3, y: 1 },
+    }).setOrigin(0.5, 0).setDepth(15);
 
     this.villagers[agentId] = { sprite, label, bubble, cfg };
     return this.villagers[agentId];
@@ -182,27 +196,45 @@ class VillageScene extends Phaser.Scene {
     let v = this.villagers[agentId];
     if (!v) v = this.spawnVillager(agentId);
 
-    const map   = TOOL_MAP[event.tool] || DEFAULT_MAP;
-    const zone  = ZONES[map.zone];
-    const tx    = zone.x + Phaser.Math.Between(-18, 18);
-    const ty    = zone.y + Phaser.Math.Between(-12, 12);
+    const map  = TOOL_MAP[event.tool] || DEFAULT_MAP;
+    const zone = ZONES[map.zone];
+    v.sprite.targetX = zone.x + Phaser.Math.Between(-18, 18);
+    v.sprite.targetY = zone.y + Phaser.Math.Between(-12, 12);
 
-    // Pick directional walk animation
-    const dx = tx - v.sprite.x;
-    const dy = ty - v.sprite.y;
-    const dir = Math.abs(dx) > Math.abs(dy)
-      ? (dx > 0 ? 'right' : 'left')
-      : (dy > 0 ? 'down'  : 'up');
-    v.sprite.play(`${v.cfg.key}-${dir}`);
-
-    const DURATION = 900;
-    this.tweens.add({ targets: v.sprite, x: tx, y: ty,    duration: DURATION, ease: 'Power1',
-      onComplete: () => v.sprite.play(`${v.cfg.key}-idle`) });
-    this.tweens.add({ targets: v.label,  x: tx, y: ty-40, duration: DURATION, ease: 'Power1' });
-    this.tweens.add({ targets: v.bubble, x: tx, y: ty+30, duration: DURATION, ease: 'Power1' });
-
-    // Show tool name as placeholder until real text arrives
     v.bubble.setText(event.tool || map.label);
+  }
+
+  // update() drives all villager movement — physics handles collision separation
+  update() {
+    const SPEED   = 75;  // px/s
+    const ARRIVAL = 6;   // px — close enough to stop
+
+    for (const v of Object.values(this.villagers)) {
+      const dx   = v.sprite.targetX - v.sprite.x;
+      const dy   = v.sprite.targetY - v.sprite.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > ARRIVAL) {
+        const vx = (dx / dist) * SPEED;
+        const vy = (dy / dist) * SPEED;
+        v.sprite.setVelocity(vx, vy);
+
+        // Walk animation — pick direction from dominant axis
+        const dir = Math.abs(dx) > Math.abs(dy)
+          ? (dx > 0 ? 'right' : 'left')
+          : (dy > 0 ? 'down' : 'up');
+        const anim = `${v.cfg.key}-${dir}`;
+        if (v.sprite.anims.currentAnim?.key !== anim) v.sprite.play(anim);
+      } else {
+        v.sprite.setVelocity(0, 0);
+        const idle = `${v.cfg.key}-idle`;
+        if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+      }
+
+      // Labels track sprite in real time
+      v.label.setPosition(v.sprite.x, v.sprite.y - 40);
+      v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
+    }
   }
 
   // Real agent text replaces the bubble — always wins over the tool placeholder.
@@ -249,7 +281,11 @@ new Phaser.Game({
   width: 800,
   height: 500,
   backgroundColor: '#3a6a28',
-  pixelArt: true,               // nearest-neighbour — no anti-aliasing
+  pixelArt: true,
+  physics: {
+    default: 'arcade',
+    arcade: { gravity: { y: 0 }, debug: false },
+  },
   scene: VillageScene,
   parent: document.body,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
