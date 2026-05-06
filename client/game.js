@@ -1,6 +1,94 @@
 // ClaudeRPG — FF4-style village
 // Assets: LPC Base Assets + LPC Terrains (CC-BY-SA 3.0, Stephen Challener / Lanea Zimmermann et al.)
 
+// ── PATHFINDING ────────────────────────────────────────────────────────────
+// 30×20 tile grid (50px/tile in 1536×1024 source). A* routes villagers
+// through walkable tiles defined by the player.
+
+const TILE_SIZE = 50, GRID_COLS = 30, GRID_ROWS = 20;
+const SRC_W = 1536, SRC_H = 1024, GAME_W = 800, GAME_H = 500;
+
+// Walkable column ranges per row [colStart, colEnd] inclusive
+const NAV = [
+  [[14,29]],                              // row  0
+  [[14,29]],                              // row  1
+  [[10,21],[28,29]],                      // row  2
+  [[9,25],[28,29]],                       // row  3
+  [[8,11],[17,29]],                       // row  4
+  [[6,11],[17,21],[25,29]],              // row  5
+  [[3,8],[17,21],[25,29]],               // row  6
+  [[1,8],[12,15],[17,29]],               // row  7
+  [[1,3],[5,12],[14,15],[19,29]],        // row  8
+  [[1,1],[4,8],[11,15],[19,21],[24,29]], // row  9
+  [[1,8],[12,15],[19,21],[24,29]],       // row 10
+  [[1,8],[14,14],[19,29]],               // row 11
+  [[5,8],[13,17],[19,29]],               // row 12
+  [[5,10],[12,29]],                       // row 13
+  [[5,15],[17,21],[24,29]],              // row 14
+  [[5,11],[14,15],[17,21]],              // row 15
+  [[6,6],[9,21]],                         // row 16
+  [[6,6],[9,21]],                         // row 17
+  [[6,6],[9,21]],                         // row 18
+  [[10,21]],                              // row 19
+];
+
+const GRID = NAV.map(ranges => {
+  const row = new Array(GRID_COLS).fill(false);
+  for (const [c1, c2] of ranges) for (let c = c1; c <= c2; c++) row[c] = true;
+  return row;
+});
+
+function gameToTile(gx, gy) {
+  return {
+    c: Math.max(0, Math.min(GRID_COLS-1, Math.floor((gx/GAME_W)*SRC_W/TILE_SIZE))),
+    r: Math.max(0, Math.min(GRID_ROWS-1, Math.floor((gy/GAME_H)*SRC_H/TILE_SIZE))),
+  };
+}
+
+function tileToGame(c, r) {
+  return {
+    x: (c*TILE_SIZE + TILE_SIZE/2) * GAME_W/SRC_W,
+    y: (r*TILE_SIZE + TILE_SIZE/2) * GAME_H/SRC_H,
+  };
+}
+
+function nearestWalkable(c, r) {
+  for (let rad = 0; rad <= 8; rad++) {
+    for (let dr = -rad; dr <= rad; dr++) {
+      for (let dc = -rad; dc <= rad; dc++) {
+        if (Math.abs(dc) !== rad && Math.abs(dr) !== rad) continue;
+        const nc = c+dc, nr = r+dr;
+        if (nc>=0 && nc<GRID_COLS && nr>=0 && nr<GRID_ROWS && GRID[nr][nc]) return {c:nc,r:nr};
+      }
+    }
+  }
+  return { c:14, r:10 };
+}
+
+function aStar(sc, sr, ec, er) {
+  const key = (c,r) => c*100+r;
+  const h   = (c,r) => Math.abs(c-ec)+Math.abs(r-er);
+  const open = new Map(), closed = new Set();
+  const s = { c:sc, r:sr, g:0, h:h(sc,sr), parent:null };
+  s.f = s.h; open.set(key(sc,sr), s);
+
+  while (open.size) {
+    let best = null;
+    for (const n of open.values()) if (!best || n.f < best.f) best = n;
+    if (best.c===ec && best.r===er) {
+      const path=[]; for (let n=best; n; n=n.parent) path.unshift(n); return path;
+    }
+    open.delete(key(best.c,best.r)); closed.add(key(best.c,best.r));
+    for (const [dc,dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+      const nc=best.c+dc, nr=best.r+dr;
+      if (nc<0||nc>=GRID_COLS||nr<0||nr>=GRID_ROWS||!GRID[nr][nc]||closed.has(key(nc,nr))) continue;
+      const g=best.g+1, ex=open.get(key(nc,nr));
+      if (!ex||g<ex.g) { const n={c:nc,r:nr,g,h:h(nc,nr),parent:best}; n.f=n.g+n.h; open.set(key(nc,nr),n); }
+    }
+  }
+  return null;
+}
+
 // ── ZONES  (image is 1536×1024 → 800×500; scale x×0.521, y×0.488)
 // zone.x/y = where the villager stands; label renders at zone.y+36
 const ZONES = {
@@ -147,9 +235,9 @@ class VillageScene extends Phaser.Scene {
     const sx = 800 / 1536, sy = 500 / 1024;
 
     const ROOFS = [
-      { key: 'workshop', tx:  10, ty: 105, tw: 210, th: 170 },
-      { key: 'inn',      tx: 345, ty: 145, tw: 500, th: 370 },
-      { key: 'lodge',    tx: 940, ty:  80, tw: 340, th: 360 },
+      { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
+      { key: 'inn',      tx: 450, ty: 100, tw: 425, th: 580 },
+      { key: 'lodge',    tx: 1070, ty: 0, tw: 330, th: 450 },
     ];
 
     this.roofSprites = {};
@@ -219,6 +307,8 @@ class VillageScene extends Phaser.Scene {
     sprite.targetX  = pos.x;
     sprite.targetY  = pos.y;
     sprite.arrived  = true;
+    sprite.path     = null;
+    sprite.pathIdx  = 0;
     // Idle look animation — independent random timer per villager
     sprite.idleMs   = 0;
     sprite.idleWait = Phaser.Math.Between(2000, 6000);
@@ -245,8 +335,29 @@ class VillageScene extends Phaser.Scene {
 
     const map  = TOOL_MAP[event.tool] || DEFAULT_MAP;
     const zone = ZONES[map.zone];
-    v.sprite.targetX  = zone.x + Phaser.Math.Between(-18, 18);
-    v.sprite.targetY  = zone.y + Phaser.Math.Between(-12, 12);
+    const destX = zone.x + Phaser.Math.Between(-18, 18);
+    const destY = zone.y + Phaser.Math.Between(-12, 12);
+
+    // A* from current tile to nearest walkable tile at destination
+    const st = gameToTile(v.sprite.x, v.sprite.y);
+    const et = gameToTile(destX, destY);
+    const stW = GRID[st.r]?.[st.c] ? st : nearestWalkable(st.c, st.r);
+    const etW = GRID[et.r]?.[et.c] ? et : nearestWalkable(et.c, et.r);
+    const path = aStar(stW.c, stW.r, etW.c, etW.r);
+
+    if (path && path.length > 1) {
+      // Convert tile waypoints to game coords, append exact destination
+      v.sprite.path   = path.slice(1).map(t => tileToGame(t.c, t.r));
+      v.sprite.path.push({ x: destX, y: destY });
+      v.sprite.pathIdx = 0;
+      v.sprite.targetX = v.sprite.path[0].x;
+      v.sprite.targetY = v.sprite.path[0].y;
+    } else {
+      v.sprite.path    = null;
+      v.sprite.targetX = destX;
+      v.sprite.targetY = destY;
+    }
+
     v.sprite.arrived  = false;
     v.sprite.looking  = false;
     v.sprite.idleMs   = 0;
@@ -296,10 +407,19 @@ class VillageScene extends Phaser.Scene {
           const anim = `${v.cfg.key}-${dir}`;
           if (v.sprite.anims.currentAnim?.key !== anim) v.sprite.play(anim);
         } else {
-          // Arrived — lock in and never fight physics again until next event
-          v.sprite.arrived = true;
-          v.sprite.setVelocity(0, 0);
-          if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+          // Reached current waypoint — advance path or declare arrival
+          const path = v.sprite.path;
+          if (path && v.sprite.pathIdx < path.length - 1) {
+            v.sprite.pathIdx++;
+            const wp = path[v.sprite.pathIdx];
+            v.sprite.targetX = wp.x;
+            v.sprite.targetY = wp.y;
+          } else {
+            v.sprite.arrived = true;
+            v.sprite.path    = null;
+            v.sprite.setVelocity(0, 0);
+            if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+          }
         }
       }
 
