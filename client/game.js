@@ -68,6 +68,10 @@ class VillageScene extends Phaser.Scene {
       this.anims.create({ key: `${key}-down`,  frames: this.anims.generateFrameNumbers(key, { start: 18, end: 26 }), frameRate: 10, repeat: -1 });
       this.anims.create({ key: `${key}-right`, frames: this.anims.generateFrameNumbers(key, { start: 27, end: 35 }), frameRate: 10, repeat: -1 });
       this.anims.create({ key: `${key}-idle`,  frames: [{ key, frame: 18 }], frameRate: 1 });
+      // Short "look" clips — 3 frames, play-once, then caller returns to idle
+      this.anims.create({ key: `${key}-look-left`,  frames: this.anims.generateFrameNumbers(key, { start: 9,  end: 11 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-right`, frames: this.anims.generateFrameNumbers(key, { start: 27, end: 29 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-down`,  frames: this.anims.generateFrameNumbers(key, { start: 18, end: 20 }), frameRate: 5, repeat: 0 });
     }
 
     // ── Physics group — collider added once, handles all villager separation
@@ -174,9 +178,13 @@ class VillageScene extends Phaser.Scene {
     this.villagerGroup.add(sprite);
 
     // Target + arrived flag — once settled, don't fight physics separation
-    sprite.targetX = pos.x;
-    sprite.targetY = pos.y;
-    sprite.arrived = true; // start settled; set false when new target assigned
+    sprite.targetX  = pos.x;
+    sprite.targetY  = pos.y;
+    sprite.arrived  = true;
+    // Idle look animation — independent random timer per villager
+    sprite.idleMs   = 0;
+    sprite.idleWait = Phaser.Math.Between(2000, 6000);
+    sprite.looking  = false;
 
     const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
     const label  = this.add.text(pos.x, pos.y - 40, name, {
@@ -199,25 +207,44 @@ class VillageScene extends Phaser.Scene {
 
     const map  = TOOL_MAP[event.tool] || DEFAULT_MAP;
     const zone = ZONES[map.zone];
-    v.sprite.targetX = zone.x + Phaser.Math.Between(-18, 18);
-    v.sprite.targetY = zone.y + Phaser.Math.Between(-12, 12);
-    v.sprite.arrived = false; // new destination — start moving
+    v.sprite.targetX  = zone.x + Phaser.Math.Between(-18, 18);
+    v.sprite.targetY  = zone.y + Phaser.Math.Between(-12, 12);
+    v.sprite.arrived  = false;
+    v.sprite.looking  = false;
+    v.sprite.idleMs   = 0;
 
     v.bubble.setText(event.tool || map.label);
   }
 
   // update() drives villager movement — physics handles separation
-  update() {
-    const SPEED   = 75;  // px/s
-    const ARRIVAL = 20;  // px — settle radius (generous so physics can spread freely)
+  update(time, delta) {
+    const SPEED   = 75;
+    const ARRIVAL = 20;
+    const LOOKS   = ['look-left', 'look-right', 'look-down'];
 
     for (const v of Object.values(this.villagers)) {
       const idle = `${v.cfg.key}-idle`;
 
       if (v.sprite.arrived) {
-        // Settled — zero velocity so physics collision can push freely without counter-force
         v.sprite.setVelocity(0, 0);
-        if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+
+        // Idle look animation — tick the per-villager timer
+        if (!v.sprite.looking) {
+          v.sprite.idleMs += delta;
+          if (v.sprite.idleMs >= v.sprite.idleWait) {
+            v.sprite.idleMs   = 0;
+            v.sprite.idleWait = Phaser.Math.Between(3000, 8000);
+            v.sprite.looking  = true;
+            const look = `${v.cfg.key}-${LOOKS[Phaser.Math.Between(0, 2)]}`;
+            v.sprite.play(look);
+            v.sprite.once('animationcomplete', () => {
+              v.sprite.looking = false;
+              if (v.sprite.arrived) v.sprite.play(idle);
+            });
+          } else if (v.sprite.anims.currentAnim?.key !== idle) {
+            v.sprite.play(idle);
+          }
+        }
       } else {
         const dx   = v.sprite.targetX - v.sprite.x;
         const dy   = v.sprite.targetY - v.sprite.y;
