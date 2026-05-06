@@ -10,26 +10,26 @@ const SRC_W = 1536, SRC_H = 1024, GAME_W = 800, GAME_H = 500;
 
 // Walkable column ranges per row [colStart, colEnd] inclusive
 const NAV = [
-  [[14,29]],                              // row  0
-  [[14,29]],                              // row  1
-  [[10,21],[28,29]],                      // row  2
-  [[9,25],[28,29]],                       // row  3
-  [[8,11],[17,29]],                       // row  4
-  [[6,11],[17,21],[25,29]],              // row  5
-  [[3,8],[17,21],[25,29]],               // row  6
-  [[1,8],[12,15],[17,29]],               // row  7
-  [[1,3],[5,12],[14,15],[19,29]],        // row  8
-  [[1,1],[4,8],[11,15],[19,21],[24,29]], // row  9
-  [[1,8],[12,15],[19,21],[24,29]],       // row 10
-  [[1,8],[14,14],[19,29]],               // row 11
-  [[5,8],[13,17],[19,29]],               // row 12
-  [[5,10],[12,29]],                       // row 13
-  [[5,15],[17,21],[24,29]],              // row 14
-  [[5,11],[14,15],[17,21]],              // row 15
-  [[6,6],[9,21]],                         // row 16
-  [[6,6],[9,21]],                         // row 17
-  [[6,6],[9,21]],                         // row 18
-  [[10,21]],                              // row 19
+  [[18,19],[27,29]],                              // row  0  (-20-26)
+  [[14,29]],                                      // row  1  (+21)
+  [[10,20],[27,29]],                              // row  2  (-22,23)
+  [[9,11],[17,20],[22,25],[27,29]],               // row  3  (+27)
+  [[8,10],[17,20],[22,29]],                       // row  4  (-11)
+  [[6,9],[12,12],[14,15],[17,20],[22,29]],          // row  5  (+22-24 merged)
+  [[3,8],[12,12],[14,15],[17,20],[22,29]],          // row  6  (+22-24 merged)
+  [[1,8],[10,10],[12,12],[14,15],[17,20],[22,29]], // row  7  (-13 +10)
+  [[1,3],[5,8],[10,12],[14,15],[20,20],[28,29]],  // row  8  (-13 -19 -22-27)
+  [[1,1],[4,8],[10,15],[20,20],[28,29]],          // row  9  (-23-27)
+  [[1,8],[12,15],[20,20],[28,29]],                // row 10  (-24-27)
+  [[1,8],[12,15],[20,20],[22,29]],                // row 11  (+12,13)
+  [[1,2],[6,8],[15,15],[17,17],[19,29]],           // row 12  (-16)
+  [[0,4],[6,10],[15,15],[17,29]],                  // row 13  (-16)
+  [[0,4],[6,10],[15,15],[17,20],[24,29]],          // row 14  (-12-14)
+  [[0,4],[6,10],[15,15],[17,20]],                 // row 15  (-11 -14)
+  [[0,4],[6,6],[9,20],[22,29]],                   // row 16  (+22-29)
+  [[0,4],[6,6],[9,23],[29,29]],                   // row 17  (-24-28)
+  [[0,4],[6,6],[9,20]],                           // row 18
+  [[0,4],[6,20]],                                 // row 19  (-5)
 ];
 
 const GRID = NAV.map(ranges => {
@@ -261,6 +261,39 @@ class VillageScene extends Phaser.Scene {
     });
 
     this.connectWebSocket();
+
+    // G key toggles navmesh grid overlay
+    this.input.keyboard.on('keydown-G', () => this.toggleNavGrid());
+    if (new URLSearchParams(window.location.search).has('grid')) this.toggleNavGrid();
+  }
+
+  toggleNavGrid() {
+    if (this._navGrid) { this._navGrid.destroy(); this._navGrid = null; return; }
+
+    const g = this.add.graphics().setDepth(50);
+    this._navGrid = g;
+    const sx = GAME_W / SRC_W, sy = GAME_H / SRC_H;
+    const tw = TILE_SIZE * sx, th = TILE_SIZE * sy;
+
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const x = c * tw, y = r * th;
+        g.fillStyle(GRID[r][c] ? 0x00ff00 : 0xff2222, GRID[r][c] ? 0.18 : 0.35);
+        g.fillRect(x, y, tw, th);
+        g.lineStyle(1, 0xffffff, 0.25);
+        g.strokeRect(x, y, tw, th);
+      }
+    }
+
+    // Tile coordinate labels
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        const x = c * tw + tw / 2, y = r * th + th / 2;
+        this.add.text(x, y, `${c},${r}`, {
+          fontSize: '5px', color: '#ffffff', fontFamily: 'monospace',
+        }).setOrigin(0.5).setDepth(51).setData('navlabel', true);
+      }
+    }
   }
 
   // ── DAY / NIGHT ──────────────────────────────────────────────────────────
@@ -494,7 +527,7 @@ class VillageScene extends Phaser.Scene {
     const home = { x: 90, y: 355 }; // Workshop south yard
 
     const dog = this.add.image(home.x, home.y, 'cattledog')
-      .setScale(0.06).setDepth(8);
+      .setScale(0.045).setDepth(8);
     this.dogs.push(dog);
 
     const wander = () => {
@@ -780,7 +813,7 @@ class VillageScene extends Phaser.Scene {
     sprite._preFishText   = null;
     sprite._idleWander    = false;
     sprite._idleWanderMs  = 0;
-    sprite._idleWanderWait = Phaser.Math.Between(10000, 20000);
+    sprite._idleWanderWait = Phaser.Math.Between(6000, 12000);
     // Idle look animation — independent random timer per villager
     sprite.idleMs   = 0;
     sprite.idleWait = Phaser.Math.Between(2000, 6000);
@@ -962,11 +995,11 @@ class VillageScene extends Phaser.Scene {
           v.sprite._idleWanderMs += delta;
           if (v.sprite._idleWanderMs >= v.sprite._idleWanderWait) {
             v.sprite._idleWanderMs  = 0;
-            v.sprite._idleWanderWait = Phaser.Math.Between(10000, 20000);
+            v.sprite._idleWanderWait = Phaser.Math.Between(6000, 12000);
             const ct = gameToTile(v.sprite.x, v.sprite.y);
             const picks = [];
-            for (let dr = -2; dr <= 2; dr++)
-              for (let dc = -2; dc <= 2; dc++) {
+            for (let dr = -3; dr <= 3; dr++)
+              for (let dc = -3; dc <= 3; dc++) {
                 if (dr === 0 && dc === 0) continue;
                 const nr = ct.r + dr, nc = ct.c + dc;
                 if (nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS && GRID[nr][nc])
