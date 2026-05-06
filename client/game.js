@@ -145,11 +145,7 @@ class VillageScene extends Phaser.Scene {
       this.roofHint.setText(this.roofVisible ? '[R] hide roofs' : '[R] show roofs');
     });
 
-    // ── Zone labels (depth 15 — always above roofs) ───────────────────
-    const ls = { fontSize: '9px', color: '#ffe082', fontFamily: 'monospace',
-                 backgroundColor: '#00000099', padding: { x: 4, y: 2 } };
-    for (const z of Object.values(ZONES))
-      this.add.text(z.x, z.y + 36, z.label, ls).setOrigin(0.5, 0).setDepth(15);
+    // Zone labels intentionally removed — village art speaks for itself
 
     // ── UI hint ───────────────────────────────────────────────────────
     this.roofHint = this.add.text(8, 8, '[R] hide roofs', {
@@ -205,15 +201,18 @@ class VillageScene extends Phaser.Scene {
     this.tweens.add({ targets: v.label,  x: tx, y: ty-40, duration: DURATION, ease: 'Power1' });
     this.tweens.add({ targets: v.bubble, x: tx, y: ty+30, duration: DURATION, ease: 'Power1' });
 
-    v.bubble.setText(map.label);
+    // Show tool name as placeholder until real text arrives
+    v.bubble.setText(event.tool || map.label);
   }
 
-  // Show the last ~72 chars of Claude's actual text in the speech bubble.
+  // Real agent text replaces the bubble — always wins over the tool placeholder.
   handleText(ev) {
     const agentId = ev.agent || 'main';
     const v = this.villagers[agentId];
     if (!v) return;
-    const snippet = ev.text.length > 72 ? '...' + ev.text.slice(-72) : ev.text;
+    // Take the last sentence-like chunk (split on . ! ? \n) that fits in ~72 chars
+    const clean = ev.text.replace(/\s+/g, ' ').trim();
+    const snippet = clean.length > 72 ? '...' + clean.slice(-69) : clean;
     v.bubble.setText(snippet);
   }
 
