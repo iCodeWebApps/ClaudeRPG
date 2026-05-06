@@ -173,9 +173,10 @@ class VillageScene extends Phaser.Scene {
 
     this.villagerGroup.add(sprite);
 
-    // Target the villager walks toward (set by handleEvent)
+    // Target + arrived flag — once settled, don't fight physics separation
     sprite.targetX = pos.x;
     sprite.targetY = pos.y;
+    sprite.arrived = true; // start settled; set false when new target assigned
 
     const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
     const label  = this.add.text(pos.x, pos.y - 40, name, {
@@ -200,38 +201,44 @@ class VillageScene extends Phaser.Scene {
     const zone = ZONES[map.zone];
     v.sprite.targetX = zone.x + Phaser.Math.Between(-18, 18);
     v.sprite.targetY = zone.y + Phaser.Math.Between(-12, 12);
+    v.sprite.arrived = false; // new destination — start moving
 
     v.bubble.setText(event.tool || map.label);
   }
 
-  // update() drives all villager movement — physics handles collision separation
+  // update() drives villager movement — physics handles separation
   update() {
     const SPEED   = 75;  // px/s
-    const ARRIVAL = 6;   // px — close enough to stop
+    const ARRIVAL = 20;  // px — settle radius (generous so physics can spread freely)
 
     for (const v of Object.values(this.villagers)) {
-      const dx   = v.sprite.targetX - v.sprite.x;
-      const dy   = v.sprite.targetY - v.sprite.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const idle = `${v.cfg.key}-idle`;
 
-      if (dist > ARRIVAL) {
-        const vx = (dx / dist) * SPEED;
-        const vy = (dy / dist) * SPEED;
-        v.sprite.setVelocity(vx, vy);
-
-        // Walk animation — pick direction from dominant axis
-        const dir = Math.abs(dx) > Math.abs(dy)
-          ? (dx > 0 ? 'right' : 'left')
-          : (dy > 0 ? 'down' : 'up');
-        const anim = `${v.cfg.key}-${dir}`;
-        if (v.sprite.anims.currentAnim?.key !== anim) v.sprite.play(anim);
-      } else {
+      if (v.sprite.arrived) {
+        // Settled — zero velocity so physics collision can push freely without counter-force
         v.sprite.setVelocity(0, 0);
-        const idle = `${v.cfg.key}-idle`;
         if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+      } else {
+        const dx   = v.sprite.targetX - v.sprite.x;
+        const dy   = v.sprite.targetY - v.sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > ARRIVAL) {
+          v.sprite.setVelocity((dx / dist) * SPEED, (dy / dist) * SPEED);
+          const dir  = Math.abs(dx) > Math.abs(dy)
+            ? (dx > 0 ? 'right' : 'left')
+            : (dy > 0 ? 'down' : 'up');
+          const anim = `${v.cfg.key}-${dir}`;
+          if (v.sprite.anims.currentAnim?.key !== anim) v.sprite.play(anim);
+        } else {
+          // Arrived — lock in and never fight physics again until next event
+          v.sprite.arrived = true;
+          v.sprite.setVelocity(0, 0);
+          if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+        }
       }
 
-      // Labels track sprite in real time
+      // Labels always track the actual sprite position (physics may have shifted it)
       v.label.setPosition(v.sprite.x, v.sprite.y - 40);
       v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
     }
