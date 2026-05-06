@@ -6,6 +6,21 @@ Open a Claude Code window → a villager appears. Spawn a subagent → another o
 
 ## Install
 
+**Option 1 — npx (no install needed):**
+
+```bash
+npx claude-rpg
+```
+
+**Option 2 — global install:**
+
+```bash
+npm install -g claude-rpg
+claude-rpg
+```
+
+**Option 3 — from source:**
+
 ```bash
 git clone https://github.com/iCodeWebApps/ClaudeRPG
 cd ClaudeRPG
@@ -22,10 +37,12 @@ Opens at **http://localhost:3131**. Start any Claude Code session and your villa
 - Villagers walk to new spots on every tool call, via A* pathfinding
 - Speech bubbles show Claude's actual response text
 - Hover over a building roof to fade it and see who's inside
-- Drag villagers and chickens to reposition them
+- Drag villagers, dogs, and chickens to reposition them
 - Click a villager to see its last 8 tool calls
 - Night/day cycle based on your system clock
-- 7 chickens that wander and peck
+- 7 chickens that wander, peck, and occasionally lay eggs
+- Two dogs that roam the village (the cattledog herds chickens to the lower-left)
+- Drag a fishing-rod character to the lower-right pond to fish
 
 ## Roadmap
 
