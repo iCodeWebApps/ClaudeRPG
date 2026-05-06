@@ -25,5 +25,8 @@
     "visualization",
     "agents"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  }
 }

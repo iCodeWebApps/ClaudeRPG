@@ -55,6 +55,9 @@ class VillageScene extends Phaser.Scene {
     // Village backgrounds — both pixel-perfect aligned (1950×1300)
     this.load.image('village',        'assets/village.png');         // with roofs
     this.load.image('village_noroofs','assets/village_noroofs.png'); // interiors visible
+
+    // Chicken sprite (transparent background, 800×922)
+    this.load.image('chicken', 'assets/chicken.png');
   }
 
   create() {
@@ -69,7 +72,58 @@ class VillageScene extends Phaser.Scene {
     }
 
     this.buildMap();
+    this.spawnChickens();
     this.connectWebSocket();
+  }
+
+  spawnChickens() {
+    // Home positions — grassy outdoor areas only
+    const homes = [
+      { x: 142, y: 300 },  // Workshop yard
+      { x:  90, y: 355 },  // Workshop south
+      { x: 218, y: 235 },  // Between Workshop and Inn
+      { x: 170, y: 422 },  // Town Green table area
+      { x: 370, y: 420 },  // South of Inn entrance
+      { x: 618, y: 398 },  // Orchard fence
+      { x: 470, y: 115 },  // North Gate path
+    ];
+
+    for (const home of homes) {
+      const chicken = this.add.image(home.x, home.y, 'chicken')
+        .setScale(0.042).setDepth(8); // depth 8: above roofs (6) and agents (7)
+
+      const wander = () => {
+        const dx = Phaser.Math.Between(-60, 60);
+        const dy = Phaser.Math.Between(-28, 28);
+        const tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
+        const ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
+
+        if (dx !== 0) chicken.setFlipX(dx < 0);
+
+        this.tweens.add({
+          targets: chicken, x: tx, y: ty,
+          duration: Phaser.Math.Between(1000, 2600),
+          ease: 'Linear',
+          onComplete: peck,
+        });
+      };
+
+      const peck = () => {
+        this.tweens.add({
+          targets: chicken,
+          y: chicken.y + 5,
+          duration: 110,
+          yoyo: true,
+          repeat: Phaser.Math.Between(0, 2),
+          onComplete: () => {
+            this.time.delayedCall(Phaser.Math.Between(300, 1800), wander);
+          },
+        });
+      };
+
+      // Stagger start so they don't all sync up
+      this.time.delayedCall(Phaser.Math.Between(0, 2500), wander);
+    }
   }
 
   buildMap() {

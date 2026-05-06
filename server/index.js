@@ -34,6 +34,15 @@ app.post('/event', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+// Asset save endpoint — used by Playwright extraction scripts
+app.post('/save-asset', (req, res) => {
+  const { name, data } = req.body;
+  const base64 = data.replace(/^data:image\/\w+;base64,/, '');
+  const buf = Buffer.from(base64, 'base64');
+  require('fs').writeFileSync(path.join(__dirname, '../client/assets', name), buf);
+  res.json({ ok: true, name });
+});
+
 server.listen(PORT, async () => {
   console.log(`ClaudeRPG running at http://localhost:${PORT}`);
   startWatcher(broadcast);
