@@ -81,24 +81,64 @@ function drain(filePath, broadcast) {
   }
 }
 
-module.exports = function startWatcher(broadcast) {
-  // Scan existing files first so we know their sizes (and don't replay history).
-  function initFile(filePath) {
-    if (offsets[filePath] !== undefined) return;
-    try { offsets[filePath] = fs.statSync(filePath).size; } catch {}
-  }
+// Restore last-known tool position from recently-active sessions.
+// Reads only the last 8KB of files modified within the past 8 hours —
+// finds the most recent tool_use event and re-broadcasts it so the
+// server's villagerState map (and any connected browsers) get populated.
+function replayRecent(broadcast) {
+  const cutoff = Date.now() - 8 * 60 * 60 * 1000;
 
-  function scanDir(dir) {
+  function scan(dir) {
     try {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) scanDir(full);
-        else if (entry.name.endsWith('.jsonl')) initFile(full);
+        if (entry.isDirectory()) { scan(full); continue; }
+        if (!entry.name.endsWith('.jsonl')) continue;
+
+        let stat;
+        try { stat = fs.statSync(full); } catch { continue; }
+
+        offsets[full] = stat.size; // always seed to current size
+
+        if (stat.mtimeMs < cutoff) continue; // too old — skip replay
+
+        // Read last 8 KB to find the most recent tool_use
+        const readBytes = Math.min(stat.size, 8192);
+        const buf = Buffer.alloc(readBytes);
+        let fd;
+        try {
+          fd = fs.openSync(full, 'r');
+          fs.readSync(fd, buf, 0, readBytes, stat.size - readBytes);
+        } catch { continue; } finally {
+          try { if (fd !== undefined) fs.closeSync(fd); } catch {}
+        }
+
+        const agentId = agentIdFromPath(full);
+        const lines = buf.toString('utf8').split('\n').filter(l => l.trim());
+
+        // Walk backwards — find the last tool_use block
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const event = JSON.parse(lines[i]);
+            if (event.type !== 'assistant') continue;
+            const content = event.message?.content;
+            if (!Array.isArray(content)) continue;
+            const tool = content.find(b => b.type === 'tool_use');
+            if (!tool) continue;
+            broadcast({ type: 'tool_use', tool: tool.name, agent: agentId, sessionId: event.sessionId, timestamp: Date.now() });
+            break;
+          } catch {}
+        }
       }
     } catch {}
   }
 
-  scanDir(PROJECTS_DIR);
+  scan(PROJECTS_DIR);
+}
+
+module.exports = function startWatcher(broadcast) {
+  // On startup: seed offsets and replay last-known position for active sessions
+  replayRecent(broadcast);
 
   // Watch for new files and changes.
   const watcher = chokidar.watch(`${PROJECTS_DIR}/**/*.jsonl`, {
