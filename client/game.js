@@ -117,6 +117,11 @@ const ZONES = {
   commons:  { x: 70,  y: 413, label: 'The Commons'   }, // bottom-left rocks + grass
 };
 
+const FISHING_ZONE  = { x: 550, y: 250, w: 250, h: 250 }; // bottom-right 250×250
+const FISHING_SNAP  = { x: 700, y: 385 };                 // where the character stands to fish
+const FISHING_OFFSETS = [0, -36, 36, -72, 72];           // x offsets for multiple fishers
+const FISHING_CHARS = new Set(['character1', 'character2']);
+
 const TOOL_MAP = {
   Read:      { zone: 'inn',      label: 'studying...'    },
   Glob:      { zone: 'orchard',  label: 'searching...'   },
@@ -156,9 +161,14 @@ class VillageScene extends Phaser.Scene {
     this.load.spritesheet('altcolor', B + 'sprites/people/soldier_altcolor.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('princess', B + 'sprites/people/princess.png',         { frameWidth: 64, frameHeight: 64 });
 
-    // Universal LPC characters (832×3456, 13 frames × 54 rows, 64×64 each)
+    // Universal LPC characters — 64×64 frames, 26 cols wide (1664px sheet)
     this.load.spritesheet('character1', 'assets/character1.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('character2', 'assets/character2.png', { frameWidth: 64, frameHeight: 64 });
+
+    // Fishing frames are 128×128 (rod extends right, casting pose goes tall)
+    // Same PNG, different frame config: 13 cols × 31 rows
+    this.load.spritesheet('character1-fishing', 'assets/character1.png', { frameWidth: 128, frameHeight: 128 });
+    this.load.spritesheet('character2-fishing', 'assets/character2.png', { frameWidth: 128, frameHeight: 128 });
 
     // Village backgrounds — both pixel-perfect aligned (1950×1300)
     this.load.image('village',        'assets/village.png');         // with roofs
@@ -178,16 +188,31 @@ class VillageScene extends Phaser.Scene {
 
   create() {
     // ── Animations ─────────────────────────────────────────────────────
-    // Universal LPC characters — walk cycle at rows 8-11 (13 frames/row → frame = row*13+col)
+    // Fishing rod animations — character1 and character2 only
+    // Sheet: 832px wide = 13 frames/row; fishing at rows 50-53
+    // Row 53 (right-cast): frames 689-694  Row 51 (wait/hold): 663-665  Row 50 (bite/reel): 650-655
     for (const key of ['character1', 'character2']) {
-      this.anims.create({ key: `${key}-up`,         frames: this.anims.generateFrameNumbers(key, { start: 104, end: 112 }), frameRate: 10, repeat: -1 });
-      this.anims.create({ key: `${key}-left`,        frames: this.anims.generateFrameNumbers(key, { start: 117, end: 125 }), frameRate: 10, repeat: -1 });
-      this.anims.create({ key: `${key}-down`,        frames: this.anims.generateFrameNumbers(key, { start: 130, end: 138 }), frameRate: 10, repeat: -1 });
-      this.anims.create({ key: `${key}-right`,       frames: this.anims.generateFrameNumbers(key, { start: 143, end: 151 }), frameRate: 10, repeat: -1 });
-      this.anims.create({ key: `${key}-idle`,        frames: [{ key, frame: 130 }], frameRate: 1 });
-      this.anims.create({ key: `${key}-look-left`,   frames: this.anims.generateFrameNumbers(key, { start: 117, end: 119 }), frameRate: 5, repeat: 0 });
-      this.anims.create({ key: `${key}-look-right`,  frames: this.anims.generateFrameNumbers(key, { start: 143, end: 145 }), frameRate: 5, repeat: 0 });
-      this.anims.create({ key: `${key}-look-down`,   frames: this.anims.generateFrameNumbers(key, { start: 130, end: 132 }), frameRate: 5, repeat: 0 });
+      // Fishing uses 128×64 frames (13 cols × 62 rows), frame = row*13 + col
+      // Rows 54-57 = cast (4 dirs), rows 58-61 = hold (4 dirs); right-facing = rows 57 and 61
+      const fk = `${key}-fishing`;
+      // 128×128 frames, 13 cols × 31 rows; fishing rows 27-30
+      // Row 30 (right-facing cast): 30×13=390  Row 29 (down-hold): 29×13=377  Row 27 (up-reel): 27×13=351
+      this.anims.create({ key: `${key}-fish-cast`, frames: this.anims.generateFrameNumbers(fk, { start: 390, end: 396 }), frameRate: 8, repeat: 0 });
+      this.anims.create({ key: `${key}-fish-wait`, frames: this.anims.generateFrameNumbers(fk, { start: 390, end: 393 }), frameRate: 4, repeat: -1 });
+      this.anims.create({ key: `${key}-fish-bite`, frames: this.anims.generateFrameNumbers(fk, { start: 351, end: 357 }), frameRate: 8, repeat: 0 });
+    }
+
+    // Universal LPC characters — 64×64 frames, 26 cols/row (1664px sheet)
+    // Walk at rows 8-11: frame = row*26 + col
+    for (const key of ['character1', 'character2']) {
+      this.anims.create({ key: `${key}-up`,        frames: this.anims.generateFrameNumbers(key, { start: 208, end: 216 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-left`,       frames: this.anims.generateFrameNumbers(key, { start: 234, end: 242 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-down`,       frames: this.anims.generateFrameNumbers(key, { start: 260, end: 268 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-right`,      frames: this.anims.generateFrameNumbers(key, { start: 286, end: 294 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-idle`,       frames: [{ key, frame: 260 }], frameRate: 1 });
+      this.anims.create({ key: `${key}-look-left`,  frames: this.anims.generateFrameNumbers(key, { start: 234, end: 236 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-right`, frames: this.anims.generateFrameNumbers(key, { start: 286, end: 288 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-down`,  frames: this.anims.generateFrameNumbers(key, { start: 260, end: 262 }), frameRate: 5, repeat: 0 });
     }
 
     for (const key of ['soldier', 'altcolor', 'princess']) {
@@ -208,6 +233,7 @@ class VillageScene extends Phaser.Scene {
 
     this.chickens = [];
     this.dogs = [];
+    this.fishingSlots = new Set();
 
     this.buildMap();
     this.buildDayNight();
@@ -597,6 +623,67 @@ class VillageScene extends Phaser.Scene {
     });
   }
 
+  _stopFishing(sprite) {
+    sprite._fishing = false;
+    if (sprite._fishTween) { sprite._fishTween.remove(); sprite._fishTween = null; }
+    if (sprite._fishTimer) { sprite._fishTimer.remove(); sprite._fishTimer = null; }
+    if (sprite._fishingSlot !== undefined) {
+      this.fishingSlots.delete(sprite._fishingSlot);
+      sprite._fishingSlot = undefined;
+    }
+    if (sprite._bubbleRef) {
+      const restore = sprite._preFishText
+        ?? (sprite.history.length > 0 ? sprite.history[sprite.history.length - 1] : 'wandering...');
+      sprite._bubbleRef.setText(restore);
+    }
+    sprite._preFishText = null;
+    sprite.y = Math.round(sprite.y);
+  }
+
+  startFishing(v) {
+    if (!v || !v.sprite._fishing) return;
+    const key = v.cfg.key;
+    v.bubble.setText('fishing...');
+    v.sprite.play(`${key}-fish-cast`);
+    v.sprite.once('animationcomplete', () => {
+      if (v.sprite._fishing) this._fishWait(v);
+    });
+  }
+
+  _fishWait(v) {
+    if (!v.sprite._fishing) return;
+    const key = v.cfg.key;
+    v.sprite.play(`${key}-fish-wait`);
+    v.bubble.setText('...🎣...');
+
+    if (v.sprite._fishTween) v.sprite._fishTween.remove();
+    v.sprite._fishTween = this.tweens.add({
+      targets: v.sprite, y: v.sprite.y + 2,
+      duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.InOut',
+    });
+
+    v.sprite._fishTimer = this.time.delayedCall(
+      Phaser.Math.Between(2500, 6000),
+      () => {
+        if (!v.sprite._fishing) return;
+        if (v.sprite._fishTween) { v.sprite._fishTween.remove(); v.sprite._fishTween = null; }
+        v.sprite.y = Math.round(v.sprite.y);
+        if (Math.random() < 0.35) this._fishBite(v);
+        else this.startFishing(v);
+      }
+    );
+  }
+
+  _fishBite(v) {
+    if (!v.sprite._fishing) return;
+    const key = v.cfg.key;
+    v.bubble.setText('Got one! 🐟');
+    v.sprite.play(`${key}-fish-bite`);
+    v.sprite.once('animationcomplete', () => {
+      if (v.sprite._fishing) this.startFishing(v);
+    });
+  }
+
   buildMap() {
     // ── Ground ─────────────────────────────────────────────────────────
     // Grass base (terrain frame 2 = grass swatch, tiled at 2×)
@@ -670,8 +757,7 @@ class VillageScene extends Phaser.Scene {
 
     // Physics sprite — circular body for natural separation
     const sprite = this.physics.add.sprite(pos.x, pos.y, cfg.key)
-      .setScale(0.72).setTint(cfg.tint).setDepth(5); // under roofs (6); hover to reveal
-    // Circular body: radius 18px in texture space (64×64), centered
+      .setScale(0.72).setTint(cfg.tint).setDepth(5);
     sprite.setCircle(18, 14, 14);
     sprite.body.setCollideWorldBounds(true);
     sprite.body.setMaxVelocity(120, 120);
@@ -685,8 +771,16 @@ class VillageScene extends Phaser.Scene {
     sprite.arrived    = true;
     sprite.path       = null;
     sprite.pathIdx    = 0;
-    sprite.history    = [];      // event log for click-to-inspect
-    sprite._wasDragged = false;
+    sprite.history        = [];
+    sprite._wasDragged    = false;
+    sprite._fishing       = false;
+    sprite._fishTween     = null;
+    sprite._fishTimer     = null;
+    sprite._fishingSlot   = undefined;
+    sprite._preFishText   = null;
+    sprite._idleWander    = false;
+    sprite._idleWanderMs  = 0;
+    sprite._idleWanderWait = Phaser.Math.Between(10000, 20000);
     // Idle look animation — independent random timer per villager
     sprite.idleMs   = 0;
     sprite.idleWait = Phaser.Math.Between(2000, 6000);
@@ -702,6 +796,7 @@ class VillageScene extends Phaser.Scene {
       backgroundColor: '#00000088', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 0).setDepth(15);
 
+    sprite._bubbleRef = bubble;
     this.villagers[agentId] = { sprite, label, bubble, cfg };
 
     // ── Click to show history ─────────────────────────────────────────
@@ -721,9 +816,10 @@ class VillageScene extends Phaser.Scene {
     this.input.setDraggable(sprite);
 
     sprite.on('dragstart', () => {
-      sprite.body.setEnable(false);       // physics off while held
+      this._stopFishing(sprite);          // cancel fishing before drag starts
+      sprite.body.setEnable(false);
       this.tweens.killTweensOf(sprite);
-      sprite.setDepth(25);               // float above everything
+      sprite.setDepth(25);
     });
 
     sprite.on('drag', (pointer, dragX, dragY) => {
@@ -750,6 +846,30 @@ class VillageScene extends Phaser.Scene {
       sprite.path    = null;
       sprite.looking = false;
       sprite.idleMs  = 0;
+
+      // Start fishing if dropped near the pond — only rod-carrying characters
+      const canFish = FISHING_CHARS.has(this.villagers[agentId]?.cfg.key);
+      const inZone  = sprite.x >= FISHING_ZONE.x && sprite.x <= FISHING_ZONE.x + FISHING_ZONE.w
+                   && sprite.y >= FISHING_ZONE.y && sprite.y <= FISHING_ZONE.y + FISHING_ZONE.h;
+      if (canFish && inZone) {
+        this._stopFishing(sprite);
+        const offset = FISHING_OFFSETS.find(o => !this.fishingSlots.has(o)) ?? 0;
+        this.fishingSlots.add(offset);
+        sprite._fishingSlot = offset;
+        const sx = FISHING_SNAP.x + offset, sy = FISHING_SNAP.y;
+        sprite.setPosition(sx, sy);
+        sprite.body.reset(sx, sy);
+        label.setPosition(sx, sy - 40);
+        bubble.setPosition(sx, sy + 30);
+        sprite.targetX = sx;
+        sprite.targetY = sy;
+        sprite._fishing     = true;
+        sprite._preFishText = sprite._bubbleRef?.text ?? null;
+        sprite.setFlipX(false);
+        this.startFishing(this.villagers[agentId]);
+      } else {
+        this._stopFishing(sprite);
+      }
     });
 
     return this.villagers[agentId];
@@ -784,6 +904,11 @@ class VillageScene extends Phaser.Scene {
       v.sprite.targetY = destY;
     }
 
+    // Interrupt fishing and idle wander — agent has work to do
+    this._stopFishing(v.sprite);
+    v.sprite._idleWander   = false;
+    v.sprite._idleWanderMs = 0;
+
     v.sprite.arrived  = false;
     v.sprite.looking  = false;
     v.sprite.idleMs   = 0;
@@ -797,15 +922,22 @@ class VillageScene extends Phaser.Scene {
 
   // update() drives villager movement — physics handles separation
   update(time, delta) {
-    const SPEED   = 75;
-    const ARRIVAL = 20;
-    const LOOKS   = ['look-left', 'look-right', 'look-down'];
+    const SPEED      = 75;
+    const IDLE_SPEED = 30;
+    const ARRIVAL    = 20;
+    const LOOKS      = ['look-left', 'look-right', 'look-down'];
 
     for (const v of Object.values(this.villagers)) {
       const idle = `${v.cfg.key}-idle`;
 
       if (v.sprite.arrived) {
         v.sprite.setVelocity(0, 0);
+
+        if (v.sprite._fishing) {
+          v.label.setPosition(v.sprite.x, v.sprite.y - 40);
+          v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
+          continue;
+        }
 
         // Idle look animation — tick the per-villager timer
         if (!v.sprite.looking) {
@@ -824,13 +956,51 @@ class VillageScene extends Phaser.Scene {
             v.sprite.play(idle);
           }
         }
+
+        // Idle wander — occasional slow amble to a nearby tile
+        if (!v.sprite.looking && !v.sprite._fishing) {
+          v.sprite._idleWanderMs += delta;
+          if (v.sprite._idleWanderMs >= v.sprite._idleWanderWait) {
+            v.sprite._idleWanderMs  = 0;
+            v.sprite._idleWanderWait = Phaser.Math.Between(10000, 20000);
+            const ct = gameToTile(v.sprite.x, v.sprite.y);
+            const picks = [];
+            for (let dr = -2; dr <= 2; dr++)
+              for (let dc = -2; dc <= 2; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const nr = ct.r + dr, nc = ct.c + dc;
+                if (nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS && GRID[nr][nc])
+                  picks.push({ c: nc, r: nr });
+              }
+            if (picks.length > 0) {
+              const dest = picks[Math.floor(Math.random() * picks.length)];
+              const path = aStar(ct.c, ct.r, dest.c, dest.r);
+              if (path && path.length > 1) {
+                v.sprite.path    = path.slice(1).map(t => tileToGame(t.c, t.r));
+                v.sprite.pathIdx = 0;
+                v.sprite.targetX = v.sprite.path[0].x;
+                v.sprite.targetY = v.sprite.path[0].y;
+              } else {
+                const g = tileToGame(dest.c, dest.r);
+                v.sprite.path    = null;
+                v.sprite.targetX = g.x;
+                v.sprite.targetY = g.y;
+              }
+              v.sprite._idleWander = true;
+              v.sprite.arrived     = false;
+              v.sprite.looking     = false;
+              v.sprite.idleMs      = 0;
+            }
+          }
+        }
       } else {
         const dx   = v.sprite.targetX - v.sprite.x;
         const dy   = v.sprite.targetY - v.sprite.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist > ARRIVAL) {
-          v.sprite.setVelocity((dx / dist) * SPEED, (dy / dist) * SPEED);
+          const spd = v.sprite._idleWander ? IDLE_SPEED : SPEED;
+          v.sprite.setVelocity((dx / dist) * spd, (dy / dist) * spd);
           const dir  = Math.abs(dx) > Math.abs(dy)
             ? (dx > 0 ? 'right' : 'left')
             : (dy > 0 ? 'down' : 'up');
@@ -845,8 +1015,9 @@ class VillageScene extends Phaser.Scene {
             v.sprite.targetX = wp.x;
             v.sprite.targetY = wp.y;
           } else {
-            v.sprite.arrived = true;
-            v.sprite.path    = null;
+            v.sprite.arrived     = true;
+            v.sprite._idleWander = false;
+            v.sprite.path        = null;
             v.sprite.setVelocity(0, 0);
             if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
           }
