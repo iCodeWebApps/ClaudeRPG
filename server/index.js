@@ -18,11 +18,25 @@ const clients = new Set();
 // Last known tool_use per agent — survives browser reloads
 const villagerState = {};
 
+const AGENT_TTL = 60 * 60 * 1000; // 1 hour
+
+// Purge agents whose last event is older than TTL
+function pruneVillagerState() {
+  const cutoff = Date.now() - AGENT_TTL;
+  for (const [agent, state] of Object.entries(villagerState)) {
+    if (state.timestamp < cutoff) delete villagerState[agent];
+  }
+}
+
+setInterval(pruneVillagerState, 5 * 60 * 1000); // run every 5 minutes
+
 wss.on('connection', (ws) => {
   clients.add(ws);
 
-  // Push current state to newly connected browser immediately
+  // Push current (recent) state to newly connected browser
+  const cutoff = Date.now() - AGENT_TTL;
   for (const state of Object.values(villagerState)) {
+    if (state.timestamp < cutoff) continue;
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(state));
   }
 

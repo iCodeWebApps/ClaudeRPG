@@ -86,7 +86,7 @@ function drain(filePath, broadcast) {
 // finds the most recent tool_use event and re-broadcasts it so the
 // server's villagerState map (and any connected browsers) get populated.
 function replayRecent(broadcast) {
-  const cutoff = Date.now() - 8 * 60 * 60 * 1000;
+  const cutoff = Date.now() - 1 * 60 * 60 * 1000;
 
   function scan(dir) {
     try {

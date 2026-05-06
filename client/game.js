@@ -133,11 +133,11 @@ const DEFAULT_MAP = { zone: 'green', label: 'wandering...' };
 
 // Agent → sprite assignments (cycles for subagents)
 const SPRITES = [
-  { key: 'soldier',  tint: 0xffffff },
-  { key: 'altcolor', tint: 0xffffff },
-  { key: 'princess', tint: 0xffffff },
-  { key: 'soldier',  tint: 0x88ffcc },
-  { key: 'altcolor', tint: 0xffccff },
+  { key: 'character1', tint: 0xffffff },
+  { key: 'character2', tint: 0xffffff },
+  { key: 'princess',   tint: 0xffffff },
+  { key: 'soldier',    tint: 0x88ffcc },
+  { key: 'altcolor',   tint: 0xffccff },
 ];
 let spriteIdx = 1; // 0 reserved for main
 
@@ -156,16 +156,40 @@ class VillageScene extends Phaser.Scene {
     this.load.spritesheet('altcolor', B + 'sprites/people/soldier_altcolor.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('princess', B + 'sprites/people/princess.png',         { frameWidth: 64, frameHeight: 64 });
 
+    // Universal LPC characters (832×3456, 13 frames × 54 rows, 64×64 each)
+    this.load.spritesheet('character1', 'assets/character1.png', { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet('character2', 'assets/character2.png', { frameWidth: 64, frameHeight: 64 });
+
     // Village backgrounds — both pixel-perfect aligned (1950×1300)
     this.load.image('village',        'assets/village.png');         // with roofs
     this.load.image('village_noroofs','assets/village_noroofs.png'); // interiors visible
 
     // Chicken sprite (transparent background, 800×922)
     this.load.image('chicken', 'assets/chicken.png');
+
+    // Doodle dog sprites
+    this.load.image('doodle',      'assets/doodle.png');
+    this.load.image('doodle_step', 'assets/doodle_step.png');
+
+    // Cattle dog sprites
+    this.load.image('cattledog',      'assets/cattledog.png');
+    this.load.image('cattledog_step', 'assets/cattledog_step.png');
   }
 
   create() {
     // ── Animations ─────────────────────────────────────────────────────
+    // Universal LPC characters — walk cycle at rows 8-11 (13 frames/row → frame = row*13+col)
+    for (const key of ['character1', 'character2']) {
+      this.anims.create({ key: `${key}-up`,         frames: this.anims.generateFrameNumbers(key, { start: 104, end: 112 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-left`,        frames: this.anims.generateFrameNumbers(key, { start: 117, end: 125 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-down`,        frames: this.anims.generateFrameNumbers(key, { start: 130, end: 138 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-right`,       frames: this.anims.generateFrameNumbers(key, { start: 143, end: 151 }), frameRate: 10, repeat: -1 });
+      this.anims.create({ key: `${key}-idle`,        frames: [{ key, frame: 130 }], frameRate: 1 });
+      this.anims.create({ key: `${key}-look-left`,   frames: this.anims.generateFrameNumbers(key, { start: 117, end: 119 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-right`,  frames: this.anims.generateFrameNumbers(key, { start: 143, end: 145 }), frameRate: 5, repeat: 0 });
+      this.anims.create({ key: `${key}-look-down`,   frames: this.anims.generateFrameNumbers(key, { start: 130, end: 132 }), frameRate: 5, repeat: 0 });
+    }
+
     for (const key of ['soldier', 'altcolor', 'princess']) {
       this.anims.create({ key: `${key}-up`,    frames: this.anims.generateFrameNumbers(key, { start: 0,  end: 8  }), frameRate: 10, repeat: -1 });
       this.anims.create({ key: `${key}-left`,  frames: this.anims.generateFrameNumbers(key, { start: 9,  end: 17 }), frameRate: 10, repeat: -1 });
@@ -182,9 +206,14 @@ class VillageScene extends Phaser.Scene {
     this.villagerGroup = this.physics.add.group();
     this.physics.add.collider(this.villagerGroup, this.villagerGroup);
 
+    this.chickens = [];
+    this.dogs = [];
+
     this.buildMap();
     this.buildDayNight();
     this.spawnChickens();
+    this.spawnDoodle();
+    this.spawnCattleDog();
 
     // ── History panel (shared, shown on villager click) ───────────────
     this.histPanel = this.add.container(0, 0).setDepth(30).setVisible(false);
@@ -288,10 +317,24 @@ class VillageScene extends Phaser.Scene {
         .setScale(0.042).setDepth(8); // depth 8: above roofs (6) and agents (7)
 
       const wander = () => {
-        const dx = Phaser.Math.Between(-60, 60);
-        const dy = Phaser.Math.Between(-28, 28);
-        const tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
-        const ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
+        let dx = Phaser.Math.Between(-60, 60);
+        let dy = Phaser.Math.Between(-28, 28);
+        let tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
+        let ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
+
+        // Steer away from dogs — if destination is too close, flee direction instead
+        for (const dog of (this.dogs || [])) {
+          const ddx = tx - dog.x;
+          const ddy = ty - dog.y;
+          if (ddx * ddx + ddy * ddy < 80 * 80) {
+            const angle = Math.atan2(chicken.y - dog.y, chicken.x - dog.x);
+            const dist  = Phaser.Math.Between(50, 90);
+            tx = Phaser.Math.Clamp(chicken.x + Math.cos(angle) * dist, 12, 788);
+            ty = Phaser.Math.Clamp(chicken.y + Math.sin(angle) * dist, 12, 488);
+            dx = tx - chicken.x;
+            break;
+          }
+        }
 
         if (dx !== 0) chicken.setFlipX(dx > 0);
 
@@ -315,6 +358,10 @@ class VillageScene extends Phaser.Scene {
           },
         });
       };
+
+      chicken._fleeing = false;
+      chicken._wander  = wander;
+      this.chickens.push(chicken);
 
       // ── Drag to relocate ───────────────────────────────────────────
       chicken.setInteractive();
@@ -341,6 +388,142 @@ class VillageScene extends Phaser.Scene {
     }
   }
 
+  spawnDoodle() {
+    const home = { x: 200, y: 400 }; // Town Green, near the picnic table
+
+    const doodle = this.add.image(home.x, home.y, 'doodle')
+      .setScale(0.075).setDepth(8);
+    this.dogs.push(doodle);
+
+    const wander = () => {
+      const dx = Phaser.Math.Between(-55, 55);
+      const dy = Phaser.Math.Between(-25, 25);
+      const tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
+      const ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
+
+      if (dx !== 0) doodle.setFlipX(dx > 0);
+
+      if (doodle._walkTimer) doodle._walkTimer.remove();
+      let stepFrame = false;
+      doodle._walkTimer = this.time.addEvent({
+        delay: 180, loop: true,
+        callback: () => { stepFrame = !stepFrame; doodle.setTexture(stepFrame ? 'doodle_step' : 'doodle'); },
+      });
+
+      this.tweens.add({
+        targets: doodle, x: tx, y: ty,
+        duration: Phaser.Math.Between(1200, 3000),
+        ease: 'Linear',
+        onComplete: sniff,
+      });
+    };
+
+    const sniff = () => {
+      if (doodle._walkTimer) { doodle._walkTimer.remove(); doodle._walkTimer = null; }
+      doodle.setTexture('doodle');
+
+      this.tweens.add({
+        targets: doodle,
+        y: doodle.y + 4,
+        duration: 130,
+        yoyo: true,
+        repeat: Phaser.Math.Between(0, 3),
+        onComplete: () => {
+          this.time.delayedCall(Phaser.Math.Between(400, 2200), wander);
+        },
+      });
+    };
+
+    doodle.setInteractive();
+    this.input.setDraggable(doodle);
+
+    doodle.on('dragstart', () => {
+      this.tweens.killTweensOf(doodle);
+      doodle.setDepth(25);
+    });
+
+    doodle.on('drag', (pointer, dragX, dragY) => {
+      doodle.setPosition(dragX, dragY);
+    });
+
+    doodle.on('dragend', () => {
+      doodle.setDepth(8);
+      home.x = doodle.x;
+      home.y = doodle.y;
+      this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
+    });
+
+    this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
+  }
+
+  spawnCattleDog() {
+    const home = { x: 90, y: 355 }; // Workshop south yard
+
+    const dog = this.add.image(home.x, home.y, 'cattledog')
+      .setScale(0.06).setDepth(8);
+    this.dogs.push(dog);
+
+    const wander = () => {
+      const dx = Phaser.Math.Between(-55, 55);
+      const dy = Phaser.Math.Between(-25, 25);
+      const tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
+      const ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
+
+      if (dx !== 0) dog.setFlipX(dx > 0);
+
+      if (dog._walkTimer) dog._walkTimer.remove();
+      let stepFrame = false;
+      dog._walkTimer = this.time.addEvent({
+        delay: 180, loop: true,
+        callback: () => { stepFrame = !stepFrame; dog.setTexture(stepFrame ? 'cattledog_step' : 'cattledog'); },
+      });
+
+      this.tweens.add({
+        targets: dog, x: tx, y: ty,
+        duration: Phaser.Math.Between(1200, 3000),
+        ease: 'Linear',
+        onComplete: sniff,
+      });
+    };
+
+    const sniff = () => {
+      if (dog._walkTimer) { dog._walkTimer.remove(); dog._walkTimer = null; }
+      dog.setTexture('cattledog');
+
+      this.tweens.add({
+        targets: dog,
+        y: dog.y + 4,
+        duration: 130,
+        yoyo: true,
+        repeat: Phaser.Math.Between(0, 3),
+        onComplete: () => {
+          this.time.delayedCall(Phaser.Math.Between(400, 2200), wander);
+        },
+      });
+    };
+
+    dog.setInteractive();
+    this.input.setDraggable(dog);
+
+    dog.on('dragstart', () => {
+      this.tweens.killTweensOf(dog);
+      dog.setDepth(25);
+    });
+
+    dog.on('drag', (pointer, dragX, dragY) => {
+      dog.setPosition(dragX, dragY);
+    });
+
+    dog.on('dragend', () => {
+      dog.setDepth(8);
+      home.x = dog.x;
+      home.y = dog.y;
+      this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
+    });
+
+    this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
+  }
+
   buildMap() {
     // ── Ground ─────────────────────────────────────────────────────────
     // Grass base (terrain frame 2 = grass swatch, tiled at 2×)
@@ -356,7 +539,7 @@ class VillageScene extends Phaser.Scene {
 
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
-      { key: 'inn',      tx: 450, ty: 100, tw: 425, th: 580 },
+      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 360, clipTriW: 185, clipTriH: 114 },
       { key: 'lodge',    tx: 1070, ty: 0, tw: 330, th: 450 },
     ];
 
@@ -372,6 +555,24 @@ class VillageScene extends Phaser.Scene {
       // Game-space bounding box for hover detection
       const gx = def.tx * sx, gy = def.ty * sy;
       const gw = def.tw * sx, gh = def.th * sy;
+
+      // Optional top-left triangle cutout (clips a triangle so lower layer shows through)
+      if (def.clipTriW && def.clipTriH) {
+        const triW = def.clipTriW * sx;
+        const triH = def.clipTriH * sy;
+        const mask = this.make.graphics({ add: false });
+        mask.fillStyle(0xffffff);
+        mask.beginPath();
+        mask.moveTo(gx,        gy + triH);
+        mask.lineTo(gx + triW, gy);
+        mask.lineTo(gx + gw,   gy);
+        mask.lineTo(gx + gw,   gy + gh);
+        mask.lineTo(gx,        gy + gh);
+        mask.closePath();
+        mask.fillPath();
+        img.setMask(mask.createGeometryMask());
+      }
+
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
 
@@ -582,6 +783,36 @@ class VillageScene extends Phaser.Scene {
       // Labels always track the actual sprite position (physics may have shifted it)
       v.label.setPosition(v.sprite.x, v.sprite.y - 40);
       v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
+    }
+
+    // Chicken avoidance — flee from any dog within range
+    const FLEE_R = 45;
+    for (const chicken of this.chickens) {
+      if (chicken._fleeing) continue;
+      for (const dog of this.dogs) {
+        const dx = chicken.x - dog.x;
+        const dy = chicken.y - dog.y;
+        if (dx * dx + dy * dy < FLEE_R * FLEE_R) {
+          chicken._fleeing = true;
+          this.tweens.killTweensOf(chicken);
+          const angle = Math.atan2(dy, dx);
+          const tx = Phaser.Math.Clamp(chicken.x + Math.cos(angle) * 90, 12, 788);
+          const ty = Phaser.Math.Clamp(chicken.y + Math.sin(angle) * 90, 12, 488);
+          chicken.setFlipX(tx > chicken.x);
+          this.tweens.add({
+            targets: chicken, x: tx, y: ty,
+            duration: 450,
+            ease: 'Quad.Out',
+            onComplete: () => {
+              this.time.delayedCall(400, () => {
+                chicken._fleeing = false;
+                chicken._wander();
+              });
+            },
+          });
+          break;
+        }
+      }
     }
   }
 
