@@ -206,22 +206,6 @@ class VillageScene extends Phaser.Scene {
     this.dayOverlay = this.add.rectangle(400, 250, 800, 500, 0x000000, 0)
       .setDepth(13);
 
-    // Torch glows at key outdoor spots (depth 14 — above overlay)
-    const TORCHES = [
-      { x: 120, y: 340 }, { x: 445, y: 415 },
-      { x: 555, y: 215 }, { x: 270, y: 365 },
-    ];
-    this.torchGraphics = this.add.graphics().setDepth(14).setAlpha(0);
-    for (const t of TORCHES) {
-      this.torchGraphics.fillStyle(0xff6600, 0.06); this.torchGraphics.fillCircle(t.x, t.y, 52);
-      this.torchGraphics.fillStyle(0xff8800, 0.10); this.torchGraphics.fillCircle(t.x, t.y, 36);
-      this.torchGraphics.fillStyle(0xffaa00, 0.18); this.torchGraphics.fillCircle(t.x, t.y, 22);
-      this.torchGraphics.fillStyle(0xffcc00, 0.30); this.torchGraphics.fillCircle(t.x, t.y, 12);
-      this.torchGraphics.fillStyle(0xffee55, 0.50); this.torchGraphics.fillCircle(t.x, t.y,  5);
-    }
-    // Gentle pulse on the torches
-    this.tweens.add({ targets: this.torchGraphics, scaleX: 1.06, scaleY: 1.06,
-      duration: 900, ease: 'Sine.easeInOut', yoyo: true, repeat: -1 });
 
     this.updateDayNight();
     this.time.addEvent({ delay: 60000, loop: true, callback: this.updateDayNight, callbackScope: this });
@@ -229,18 +213,17 @@ class VillageScene extends Phaser.Scene {
 
   updateDayNight() {
     const h = new Date().getHours() + new Date().getMinutes() / 60;
-    let color = 0x000000, alpha = 0, torchAlpha = 0;
+    let color = 0x000000, alpha = 0;
 
-    if      (h >= 23 || h < 5)  { color = 0x111133; alpha = 0.55; torchAlpha = 0.95; }
-    else if (h >= 5  && h < 7)  { color = 0xff5522; alpha = 0.20; torchAlpha = 0.60; }
-    else if (h >= 7  && h < 9)  { color = 0xffaa44; alpha = 0.07; torchAlpha = 0.00; }
-    else if (h >= 9  && h < 17) { color = 0x000000; alpha = 0.00; torchAlpha = 0.00; }
-    else if (h >= 17 && h < 19) { color = 0xff8833; alpha = 0.12; torchAlpha = 0.30; }
-    else if (h >= 19 && h < 21) { color = 0xcc3322; alpha = 0.28; torchAlpha = 0.75; }
-    else                         { color = 0x221144; alpha = 0.42; torchAlpha = 0.90; }
+    if      (h >= 23 || h < 5)  { color = 0x111133; alpha = 0.55; }
+    else if (h >= 5  && h < 7)  { color = 0xff5522; alpha = 0.20; }
+    else if (h >= 7  && h < 9)  { color = 0xffaa44; alpha = 0.07; }
+    else if (h >= 9  && h < 17) { color = 0x000000; alpha = 0.00; }
+    else if (h >= 17 && h < 19) { color = 0xff8833; alpha = 0.12; }
+    else if (h >= 19 && h < 21) { color = 0xcc3322; alpha = 0.28; }
+    else                         { color = 0x221144; alpha = 0.42; }
 
     this.dayOverlay.setFillStyle(color, alpha);
-    this.tweens.add({ targets: this.torchGraphics, alpha: torchAlpha, duration: 3000, ease: 'Sine.easeInOut' });
   }
 
   // ── HISTORY PANEL ────────────────────────────────────────────────────────
