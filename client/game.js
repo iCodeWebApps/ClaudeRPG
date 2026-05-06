@@ -255,36 +255,18 @@ class VillageScene extends Phaser.Scene {
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
 
-    // R — toggle all roofs globally
-    this.roofVisible = true;
-    this.input.keyboard.on('keydown-R', () => {
-      this.roofVisible = !this.roofVisible;
-      for (const r of Object.values(this.roofSprites)) {
-        this.tweens.killTweensOf(r.img);
-        this.tweens.add({ targets: r.img, alpha: this.roofVisible ? 1 : 0, duration: 250 });
-      }
-      this.roofHint.setText(this.roofVisible ? '[R] hide roofs' : '[R] show roofs');
-    });
-
     // Hover — fade individual roof when cursor enters its bounding box
     this.input.on('pointermove', (ptr) => {
       for (const r of Object.values(this.roofSprites)) {
         const inside = ptr.x >= r.gx && ptr.x <= r.gx + r.gw
                     && ptr.y >= r.gy && ptr.y <= r.gy + r.gh;
-        // Only act if globally visible and alpha needs to change
-        const target = (!this.roofVisible || inside) ? 0 : 1;
+        const target = inside ? 0 : 1;
         if (Math.abs(r.img.alpha - target) > 0.01) {
           this.tweens.killTweensOf(r.img);
           this.tweens.add({ targets: r.img, alpha: target, duration: 180, ease: 'Quad.Out' });
         }
       }
     });
-
-    // ── UI hint ───────────────────────────────────────────────────────
-    this.roofHint = this.add.text(8, 8, '[R] hide roofs', {
-      fontSize: '9px', color: '#cccccc', fontFamily: 'monospace',
-      backgroundColor: '#00000099', padding: { x: 4, y: 2 },
-    }).setDepth(20);
   }
 
   // ── VILLAGER ────────────────────────────────────────────────────────────
