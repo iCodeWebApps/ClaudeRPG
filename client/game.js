@@ -140,19 +140,59 @@ class VillageScene extends Phaser.Scene {
     this.add.image(0, 0, 'village_noroofs')
       .setOrigin(0).setDisplaySize(800, 500).setDepth(0);
 
-    // ── Layer 6: roofs — pixel-perfect on top, hides characters inside
-    this.roofLayer = this.add.image(0, 0, 'village')
-      .setOrigin(0).setDisplaySize(800, 500).setDepth(6);
+    // ── Individual roof layers — one masked sprite per building ─────────
+    // Source image is 1536×1024 displayed at 800×500; scale factors:
+    const sx = 800 / 1536, sy = 500 / 1024;
 
-    // R key toggles roofs (classic RPG behaviour)
+    // Bounding boxes in source texture coordinates
+    const ROOFS = [
+      { key: 'workshop', tx:  10, ty: 105, tw: 210, th: 170 },
+      { key: 'inn',      tx: 345, ty: 145, tw: 500, th: 370 },
+      { key: 'lodge',    tx: 940, ty:  80, tw: 340, th: 360 },
+    ];
+
+    this.roofSprites = {};
+
+    for (const def of ROOFS) {
+      // Convert to game-space bounding box
+      const gx = def.tx * sx, gy = def.ty * sy;
+      const gw = def.tw * sx, gh = def.th * sy;
+
+      // Geometry mask clips the full-image copy to just this roof region
+      const mg = this.add.graphics();
+      mg.fillStyle(0xffffff).fillRect(gx, gy, gw, gh);
+
+      const img = this.add.image(0, 0, 'village')
+        .setOrigin(0).setDisplaySize(800, 500).setDepth(6)
+        .setMask(mg.createGeometryMask());
+
+      this.roofSprites[def.key] = { img, gx, gy, gw, gh };
+    }
+
+    // R — toggle all roofs globally
     this.roofVisible = true;
     this.input.keyboard.on('keydown-R', () => {
       this.roofVisible = !this.roofVisible;
-      this.roofLayer.setVisible(this.roofVisible);
+      for (const r of Object.values(this.roofSprites)) {
+        this.tweens.killTweensOf(r.img);
+        this.tweens.add({ targets: r.img, alpha: this.roofVisible ? 1 : 0, duration: 250 });
+      }
       this.roofHint.setText(this.roofVisible ? '[R] hide roofs' : '[R] show roofs');
     });
 
-    // Zone labels intentionally removed — village art speaks for itself
+    // Hover — fade individual roof when cursor enters its bounding box
+    this.input.on('pointermove', (ptr) => {
+      for (const r of Object.values(this.roofSprites)) {
+        const inside = ptr.x >= r.gx && ptr.x <= r.gx + r.gw
+                    && ptr.y >= r.gy && ptr.y <= r.gy + r.gh;
+        // Only act if globally visible and alpha needs to change
+        const target = (!this.roofVisible || inside) ? 0 : 1;
+        if (Math.abs(r.img.alpha - target) > 0.01) {
+          this.tweens.killTweensOf(r.img);
+          this.tweens.add({ targets: r.img, alpha: target, duration: 180, ease: 'Quad.Out' });
+        }
+      }
+    });
 
     // ── UI hint ───────────────────────────────────────────────────────
     this.roofHint = this.add.text(8, 8, '[R] hide roofs', {
