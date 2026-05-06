@@ -53,7 +53,7 @@ class VillageScene extends Phaser.Scene {
 
     // Village backgrounds — both pixel-perfect aligned (1950×1300)
     this.load.image('village',        'assets/village.png');         // with roofs
-    this.load.image('village-noroofs','assets/village-noroofs.png'); // interiors visible
+    this.load.image('village_noroofs','assets/village_noroofs.png'); // interiors visible
   }
 
   create() {
@@ -75,7 +75,7 @@ class VillageScene extends Phaser.Scene {
     // ── Ground ─────────────────────────────────────────────────────────
     // Grass base (terrain frame 2 = grass swatch, tiled at 2×)
     // ── Layer 0: interiors always visible ─────────────────────────────
-    this.add.image(0, 0, 'village-noroofs')
+    this.add.image(0, 0, 'village_noroofs')
       .setOrigin(0).setDisplaySize(800, 500).setDepth(0);
 
     // ── Layer 6: roofs — pixel-perfect on top, hides characters inside
