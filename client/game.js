@@ -183,8 +183,109 @@ class VillageScene extends Phaser.Scene {
     this.physics.add.collider(this.villagerGroup, this.villagerGroup);
 
     this.buildMap();
+    this.buildDayNight();
     this.spawnChickens();
+
+    // ── History panel (shared, shown on villager click) ───────────────
+    this.histPanel = this.add.container(0, 0).setDepth(30).setVisible(false);
+    this.histPanel._bg    = this.add.rectangle(0, 0, 240, 40, 0x0d0d1a, 0.93).setOrigin(0).setStrokeStyle(1, 0x334466);
+    this.histPanel._lines = [];
+    this.histPanel.add(this.histPanel._bg);
+
+    // Click anywhere outside a villager closes the panel
+    this.input.on('pointerdown', (ptr, hits) => {
+      if (this.histPanel.visible && hits.length === 0) this.histPanel.setVisible(false);
+    });
+
     this.connectWebSocket();
+  }
+
+  // ── DAY / NIGHT ──────────────────────────────────────────────────────────
+  buildDayNight() {
+    // Overlay dims the whole scene (depth 13 — above roofs, below labels)
+    this.dayOverlay = this.add.rectangle(400, 250, 800, 500, 0x000000, 0)
+      .setDepth(13);
+
+    // Torch glows at key outdoor spots (depth 14 — above overlay)
+    const TORCHES = [
+      { x: 120, y: 340 }, { x: 445, y: 415 },
+      { x: 555, y: 215 }, { x: 270, y: 365 },
+    ];
+    this.torchGraphics = this.add.graphics().setDepth(14).setAlpha(0);
+    for (const t of TORCHES) {
+      this.torchGraphics.fillStyle(0xff6600, 0.06); this.torchGraphics.fillCircle(t.x, t.y, 52);
+      this.torchGraphics.fillStyle(0xff8800, 0.10); this.torchGraphics.fillCircle(t.x, t.y, 36);
+      this.torchGraphics.fillStyle(0xffaa00, 0.18); this.torchGraphics.fillCircle(t.x, t.y, 22);
+      this.torchGraphics.fillStyle(0xffcc00, 0.30); this.torchGraphics.fillCircle(t.x, t.y, 12);
+      this.torchGraphics.fillStyle(0xffee55, 0.50); this.torchGraphics.fillCircle(t.x, t.y,  5);
+    }
+    // Gentle pulse on the torches
+    this.tweens.add({ targets: this.torchGraphics, scaleX: 1.06, scaleY: 1.06,
+      duration: 900, ease: 'Sine.easeInOut', yoyo: true, repeat: -1 });
+
+    this.updateDayNight();
+    this.time.addEvent({ delay: 60000, loop: true, callback: this.updateDayNight, callbackScope: this });
+  }
+
+  updateDayNight() {
+    const h = new Date().getHours() + new Date().getMinutes() / 60;
+    let color = 0x000000, alpha = 0, torchAlpha = 0;
+
+    if      (h >= 23 || h < 5)  { color = 0x111133; alpha = 0.55; torchAlpha = 0.95; }
+    else if (h >= 5  && h < 7)  { color = 0xff5522; alpha = 0.20; torchAlpha = 0.60; }
+    else if (h >= 7  && h < 9)  { color = 0xffaa44; alpha = 0.07; torchAlpha = 0.00; }
+    else if (h >= 9  && h < 17) { color = 0x000000; alpha = 0.00; torchAlpha = 0.00; }
+    else if (h >= 17 && h < 19) { color = 0xff8833; alpha = 0.12; torchAlpha = 0.30; }
+    else if (h >= 19 && h < 21) { color = 0xcc3322; alpha = 0.28; torchAlpha = 0.75; }
+    else                         { color = 0x221144; alpha = 0.42; torchAlpha = 0.90; }
+
+    this.dayOverlay.setFillStyle(color, alpha);
+    this.tweens.add({ targets: this.torchGraphics, alpha: torchAlpha, duration: 3000, ease: 'Sine.easeInOut' });
+  }
+
+  // ── HISTORY PANEL ────────────────────────────────────────────────────────
+  showHistory(agentId, sx, sy) {
+    const v = this.villagers[agentId];
+    if (!v) return;
+
+    // Clear previous lines
+    for (const t of this.histPanel._lines) t.destroy();
+    this.histPanel._lines = [];
+
+    const W = 240, PAD = 7, LH = 13;
+    let cy = PAD;
+
+    const title = this.add.text(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
+      fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
+    }).setOrigin(0);
+    this.histPanel.add(title); this.histPanel._lines.push(title);
+    cy += LH + 3;
+
+    const items = v.sprite.history.slice(-8).reverse();
+    if (items.length === 0) {
+      const t = this.add.text(PAD, cy, '(no events yet)', {
+        fontSize: '7px', color: '#445566', fontFamily: 'monospace',
+      }).setOrigin(0);
+      this.histPanel.add(t); this.histPanel._lines.push(t);
+      cy += LH;
+    } else {
+      for (const item of items) {
+        const isTool = item.startsWith('→');
+        const t = this.add.text(PAD, cy, item, {
+          fontSize: '7px', color: isTool ? '#88ccff' : '#aaaaaa', fontFamily: 'monospace',
+          wordWrap: { width: W - PAD * 2 },
+        }).setOrigin(0);
+        this.histPanel.add(t); this.histPanel._lines.push(t);
+        cy += Math.max(LH, Math.ceil(item.length / 30) * LH) + 1;
+      }
+    }
+
+    this.histPanel._bg.setSize(W, cy + PAD);
+
+    const px = Phaser.Math.Clamp(sx - W / 2, 4, 800 - W - 4);
+    const py = Phaser.Math.Clamp(sy - cy - PAD - 50, 4, 500 - cy - PAD * 2);
+    this.histPanel.setPosition(px, py).setVisible(true);
+    this.histPanel._activeAgent = agentId;
   }
 
   spawnChickens() {
@@ -324,9 +425,11 @@ class VillageScene extends Phaser.Scene {
     // Target + arrived flag — once settled, don't fight physics separation
     sprite.targetX  = pos.x;
     sprite.targetY  = pos.y;
-    sprite.arrived  = true;
-    sprite.path     = null;
-    sprite.pathIdx  = 0;
+    sprite.arrived    = true;
+    sprite.path       = null;
+    sprite.pathIdx    = 0;
+    sprite.history    = [];      // event log for click-to-inspect
+    sprite._wasDragged = false;
     // Idle look animation — independent random timer per villager
     sprite.idleMs   = 0;
     sprite.idleWait = Phaser.Math.Between(2000, 6000);
@@ -344,8 +447,20 @@ class VillageScene extends Phaser.Scene {
 
     this.villagers[agentId] = { sprite, label, bubble, cfg };
 
-    // ── Drag to reposition ────────────────────────────────────────────
+    // ── Click to show history ─────────────────────────────────────────
     sprite.setInteractive();
+    sprite.on('pointerdown', () => { sprite._wasDragged = false; });
+    sprite.on('drag',        () => { sprite._wasDragged = true;  });
+    sprite.on('pointerup',   () => {
+      if (sprite._wasDragged) return;
+      if (this.histPanel.visible && this.histPanel._activeAgent === agentId) {
+        this.histPanel.setVisible(false);
+      } else {
+        this.showHistory(agentId, sprite.x, sprite.y);
+      }
+    });
+
+    // ── Drag to reposition ────────────────────────────────────────────
     this.input.setDraggable(sprite);
 
     sprite.on('dragstart', () => {
@@ -417,6 +532,10 @@ class VillageScene extends Phaser.Scene {
     v.sprite.idleMs   = 0;
 
     v.bubble.setText(event.tool || map.label);
+
+    // Log to history
+    v.sprite.history.push(`→ ${event.tool}`);
+    if (v.sprite.history.length > 20) v.sprite.history.shift();
   }
 
   // update() drives villager movement — physics handles separation
@@ -488,10 +607,14 @@ class VillageScene extends Phaser.Scene {
     const agentId = ev.agent || 'main';
     const v = this.villagers[agentId];
     if (!v) return;
-    // Take the last sentence-like chunk (split on . ! ? \n) that fits in ~72 chars
-    const clean = ev.text.replace(/\s+/g, ' ').trim();
+    const clean   = ev.text.replace(/\s+/g, ' ').trim();
     const snippet = clean.length > 72 ? '...' + clean.slice(-69) : clean;
     v.bubble.setText(snippet);
+
+    // Log to history
+    const histLine = clean.length > 45 ? '"...' + clean.slice(-42) + '"' : `"${clean}"`;
+    v.sprite.history.push(histLine);
+    if (v.sprite.history.length > 20) v.sprite.history.shift();
   }
 
   // ── WEBSOCKET ────────────────────────────────────────────────────────────
