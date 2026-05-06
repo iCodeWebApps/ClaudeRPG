@@ -139,7 +139,7 @@ const SPRITES = [
   { key: 'soldier',    tint: 0x88ffcc },
   { key: 'altcolor',   tint: 0xffccff },
 ];
-let spriteIdx = 1; // 0 reserved for main
+let spriteIdx = 0;
 
 // ── SCENE ──────────────────────────────────────────────────────────────────
 class VillageScene extends Phaser.Scene {
@@ -214,6 +214,14 @@ class VillageScene extends Phaser.Scene {
     this.spawnChickens();
     this.spawnDoodle();
     this.spawnCattleDog();
+
+    // Hourly chicken ritual
+    this.time.addEvent({
+      delay: 60 * 60 * 1000,
+      loop: true,
+      callback: this.startRitual,
+      callbackScope: this,
+    });
 
     // ── History panel (shared, shown on villager click) ───────────────
     this.histPanel = this.add.container(0, 0).setDepth(30).setVisible(false);
@@ -524,6 +532,71 @@ class VillageScene extends Phaser.Scene {
     this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
   }
 
+  startRitual() {
+    const CENTER        = { x: 195, y: 385 }; // Town Green
+    const RADIUS        = 44;
+    const STEPS_PER_ROT = 14;
+    const ROTATIONS     = 2;
+    const STEP_MS       = 260;
+
+    // Stop normal behaviour — _fleeing blocks dog-avoidance logic too
+    for (const chicken of this.chickens) {
+      this.tweens.killTweensOf(chicken);
+      chicken._fleeing = true;
+    }
+
+    this.chickens.forEach((chicken, i) => {
+      const baseAngle = (i / this.chickens.length) * Math.PI * 2;
+      const sx = CENTER.x + Math.cos(baseAngle) * RADIUS;
+      const sy = CENTER.y + Math.sin(baseAngle) * RADIUS;
+
+      // Gather to starting position
+      this.tweens.add({
+        targets: chicken, x: sx, y: sy,
+        duration: 1400, ease: 'Quad.Out',
+        onComplete: () => {
+          // Peck once on arrival
+          this.tweens.add({
+            targets: chicken, y: chicken.y + 4, duration: 110,
+            yoyo: true, repeat: 1,
+            onComplete: () => {
+              // Orbit for ROTATIONS full laps
+              const totalSteps = ROTATIONS * STEPS_PER_ROT;
+              let step = 0;
+
+              const orbit = () => {
+                step++;
+                if (step > totalSteps) {
+                  // Ritual complete — peck and scatter
+                  this.tweens.add({
+                    targets: chicken, y: chicken.y + 4, duration: 110,
+                    yoyo: true, repeat: 2,
+                    onComplete: () => {
+                      chicken._fleeing = false;
+                      chicken._wander();
+                    },
+                  });
+                  return;
+                }
+                const angle = baseAngle + (step / STEPS_PER_ROT) * Math.PI * 2;
+                const tx = CENTER.x + Math.cos(angle) * RADIUS;
+                const ty = CENTER.y + Math.sin(angle) * RADIUS;
+                chicken.setFlipX(tx > chicken.x);
+                this.tweens.add({
+                  targets: chicken, x: tx, y: ty,
+                  duration: STEP_MS, ease: 'Linear',
+                  onComplete: orbit,
+                });
+              };
+
+              orbit();
+            },
+          });
+        },
+      });
+    });
+  }
+
   buildMap() {
     // ── Ground ─────────────────────────────────────────────────────────
     // Grass base (terrain frame 2 = grass swatch, tiled at 2×)
@@ -539,7 +612,7 @@ class VillageScene extends Phaser.Scene {
 
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
-      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 360, clipTriW: 185, clipTriH: 114 },
+      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 460, clipTriW: 185, clipTriH: 114 },
       { key: 'lodge',    tx: 1070, ty: 0, tw: 330, th: 450 },
     ];
 
