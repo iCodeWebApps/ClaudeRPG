@@ -140,11 +140,12 @@ class VillageScene extends Phaser.Scene {
     this.add.image(0, 0, 'village_noroofs')
       .setOrigin(0).setDisplaySize(800, 500).setDepth(0);
 
-    // ── Individual roof layers — one masked sprite per building ─────────
-    // Source image is 1536×1024 displayed at 800×500; scale factors:
+    // ── Individual roof layers — one cropped sprite per building ────────
+    // Source image is 1536×1024; displayed at 800×500 via setScale.
+    // setCrop uses texture coords; Phaser offsets the frame to its natural
+    // screen position, so no geometry masks needed.
     const sx = 800 / 1536, sy = 500 / 1024;
 
-    // Bounding boxes in source texture coordinates
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 210, th: 170 },
       { key: 'inn',      tx: 345, ty: 145, tw: 500, th: 370 },
@@ -154,18 +155,15 @@ class VillageScene extends Phaser.Scene {
     this.roofSprites = {};
 
     for (const def of ROOFS) {
-      // Convert to game-space bounding box
+      const img = this.add.image(0, 0, 'village')
+        .setOrigin(0)
+        .setScale(sx, sy)          // scale using original texture dims
+        .setCrop(def.tx, def.ty, def.tw, def.th)  // Phaser offsets automatically
+        .setDepth(6);
+
+      // Game-space bounding box for hover detection
       const gx = def.tx * sx, gy = def.ty * sy;
       const gw = def.tw * sx, gh = def.th * sy;
-
-      // Geometry mask clips the full-image copy to just this roof region
-      const mg = this.add.graphics();
-      mg.fillStyle(0xffffff).fillRect(gx, gy, gw, gh);
-
-      const img = this.add.image(0, 0, 'village')
-        .setOrigin(0).setDisplaySize(800, 500).setDepth(6)
-        .setMask(mg.createGeometryMask());
-
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
 
