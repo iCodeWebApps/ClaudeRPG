@@ -276,7 +276,7 @@ class VillageScene extends Phaser.Scene {
 
     // Physics sprite — circular body for natural separation
     const sprite = this.physics.add.sprite(pos.x, pos.y, cfg.key)
-      .setScale(0.72).setTint(cfg.tint).setDepth(7);
+      .setScale(0.72).setTint(cfg.tint).setDepth(5); // under roofs (6); hover to reveal
     // Circular body: radius 18px in texture space (64×64), centered
     sprite.setCircle(18, 14, 14);
     sprite.body.setCollideWorldBounds(true);
