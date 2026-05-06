@@ -65,6 +65,22 @@ function nearestWalkable(c, r) {
   return { c:14, r:10 };
 }
 
+// Flat list of every walkable tile — used for random destination picks
+const WALKABLE_LIST = [];
+for (let r = 0; r < GRID_ROWS; r++)
+  for (let c = 0; c < GRID_COLS; c++)
+    if (GRID[r][c]) WALKABLE_LIST.push({ c, r });
+
+function randomDest() {
+  const t = WALKABLE_LIST[Math.floor(Math.random() * WALKABLE_LIST.length)];
+  const g = tileToGame(t.c, t.r);
+  // Small sub-tile jitter so agents don't always snap to tile centres
+  return {
+    x: g.x + (Math.random() - 0.5) * 20,
+    y: g.y + (Math.random() - 0.5) * 10,
+  };
+}
+
 function aStar(sc, sr, ec, er) {
   const key = (c,r) => c*100+r;
   const h   = (c,r) => Math.abs(c-ec)+Math.abs(r-er);
@@ -315,10 +331,9 @@ class VillageScene extends Phaser.Scene {
     let v = this.villagers[agentId];
     if (!v) v = this.spawnVillager(agentId);
 
-    const map  = TOOL_MAP[event.tool] || DEFAULT_MAP;
-    const zone = ZONES[map.zone];
-    const destX = zone.x + Phaser.Math.Between(-18, 18);
-    const destY = zone.y + Phaser.Math.Between(-12, 12);
+    const dest  = randomDest();
+    const destX = dest.x;
+    const destY = dest.y;
 
     // A* from current tile to nearest walkable tile at destination
     const st = gameToTile(v.sprite.x, v.sprite.y);
