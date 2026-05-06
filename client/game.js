@@ -98,7 +98,7 @@ class VillageScene extends Phaser.Scene {
         const tx = Phaser.Math.Clamp(home.x + dx, 12, 788);
         const ty = Phaser.Math.Clamp(home.y + dy, 12, 488);
 
-        if (dx !== 0) chicken.setFlipX(dx < 0);
+        if (dx !== 0) chicken.setFlipX(dx > 0);
 
         this.tweens.add({
           targets: chicken, x: tx, y: ty,
