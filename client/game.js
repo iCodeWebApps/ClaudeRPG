@@ -1,30 +1,31 @@
 // ClaudeRPG — FF4-style village
 // Assets: LPC Base Assets + LPC Terrains (CC-BY-SA 3.0, Stephen Challener / Lanea Zimmermann et al.)
 
-// ── ZONES  (positions tuned to real features in village.png 1950×1300→800×500)
+// ── ZONES  (image is 1536×1024 → 800×500; scale x×0.521, y×0.488)
+// zone.x/y = where the villager stands; label renders at zone.y+36
 const ZONES = {
-  library: { x: 172, y: 170, label: "Sage's Tower" },  // left dark-roofed building
-  smithy:  { x: 400, y: 215, label: 'Blacksmith'    },  // central large stone building
-  harbor:  { x: 658, y: 148, label: 'The Tavern'    },  // right half-timber building
-  square:  { x: 272, y: 390, label: 'Town Square'   },  // outdoor table/bench
-  forest:  { x: 710, y: 310, label: 'Dark Forest'   },  // right-side tree cluster
-  gate:    { x: 530, y: 58,  label: 'North Gate'    },  // top fence/barrel path
-  fields:  { x: 128, y: 460, label: 'Fields'        },  // bottom-left fenced grass
+  workshop: { x: 80,  y: 162, label: 'The Workshop' }, // NW shed (barrels/logs/jugs)
+  inn:      { x: 312, y: 290, label: 'The Inn'       }, // central stone+wood building
+  lodge:    { x: 547, y: 195, label: 'The Lodge'     }, // right half-timber building
+  green:    { x: 195, y: 374, label: 'Town Green'    }, // outdoor picnic table
+  orchard:  { x: 573, y: 352, label: 'The Orchard'   }, // right autumn trees + fence
+  gate:     { x: 430, y: 50,  label: 'North Gate'    }, // top sandy path + fence
+  commons:  { x: 70,  y: 413, label: 'The Commons'   }, // bottom-left rocks + grass
 };
 
 const TOOL_MAP = {
-  Read:      { zone: 'library', label: 'studying...'    },
-  Glob:      { zone: 'forest',  label: 'searching...'   },
-  Grep:      { zone: 'forest',  label: 'searching...'   },
-  Edit:      { zone: 'smithy',  label: 'crafting...'    },
-  Write:     { zone: 'smithy',  label: 'scribing...'    },
-  Bash:      { zone: 'smithy',  label: 'forging...'     },
-  WebSearch: { zone: 'harbor',  label: 'scouting...'    },
-  WebFetch:  { zone: 'harbor',  label: 'fetching...'    },
-  Agent:     { zone: 'gate',    label: 'dispatching...' },
-  Task:      { zone: 'fields',  label: 'tending...'     },
+  Read:      { zone: 'inn',      label: 'studying...'    },
+  Glob:      { zone: 'orchard',  label: 'searching...'   },
+  Grep:      { zone: 'orchard',  label: 'searching...'   },
+  Edit:      { zone: 'workshop', label: 'crafting...'    },
+  Write:     { zone: 'workshop', label: 'scribing...'    },
+  Bash:      { zone: 'workshop', label: 'forging...'     },
+  WebSearch: { zone: 'lodge',    label: 'scouting...'    },
+  WebFetch:  { zone: 'lodge',    label: 'fetching...'    },
+  Agent:     { zone: 'gate',     label: 'dispatching...' },
+  Task:      { zone: 'commons',  label: 'tending...'     },
 };
-const DEFAULT_MAP = { zone: 'square', label: 'wandering...' };
+const DEFAULT_MAP = { zone: 'green', label: 'wandering...' };
 
 // Agent → sprite assignments (cycles for subagents)
 const SPRITES = [
