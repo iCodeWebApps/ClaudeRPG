@@ -361,8 +361,16 @@ class VillageScene extends Phaser.Scene {
     });
 
     sprite.on('dragend', () => {
+      // Snap to nearest walkable tile if dropped in a blocked area
+      const tile = gameToTile(sprite.x, sprite.y);
+      if (!GRID[tile.r]?.[tile.c]) {
+        const safe = nearestWalkable(tile.c, tile.r);
+        const pos  = tileToGame(safe.c, safe.r);
+        sprite.setPosition(pos.x, pos.y);
+      }
+
       sprite.body.setEnable(true);
-      sprite.body.reset(sprite.x, sprite.y); // sync body to dropped position
+      sprite.body.reset(sprite.x, sprite.y);
       sprite.setDepth(5);
       sprite.targetX = sprite.x;
       sprite.targetY = sprite.y;
