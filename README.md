@@ -7,6 +7,8 @@ Your Claude Code agents, alive in a pixel art village.
 
 Open a Claude Code window → a villager appears. Spawn a subagent → another one shows up. Tool calls make them walk around. No config, no hooks — it just watches Claude's session files.
 
+<img width="1515" height="945" alt="image" src="https://github.com/user-attachments/assets/748bd79a-8ac6-47bf-b5a7-5b2be2332086" />
+
 ## Install
 
 **Option 1 — npx (no install needed):**
