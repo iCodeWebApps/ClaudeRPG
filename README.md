@@ -1,5 +1,8 @@
 # ClaudeRPG
 
+[![npm version](https://img.shields.io/npm/v/claude-rpg.svg)](https://www.npmjs.com/package/claude-rpg)
+[![npm downloads](https://img.shields.io/npm/dm/claude-rpg.svg)](https://www.npmjs.com/package/claude-rpg)
+
 Your Claude Code agents, alive in a pixel art village.
 
 Open a Claude Code window → a villager appears. Spawn a subagent → another one shows up. Tool calls make them walk around. No config, no hooks — it just watches Claude's session files.
