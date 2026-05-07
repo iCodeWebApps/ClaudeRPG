@@ -944,7 +944,7 @@ class VillageScene extends Phaser.Scene {
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
       { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 510, clipTriW: 185, clipTriH: 114 },
-      { key: 'lodge',    tx: 1070, ty: 30, tw: 430, th: 380 },
+      { key: 'lodge',    tx: 1070, ty: 30, tw: 305, th: 380 },
     ];
 
     this.roofSprites = {};
@@ -979,6 +979,12 @@ class VillageScene extends Phaser.Scene {
 
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
+
+    // Lodge porch — always on top of all game objects, never fades
+    this.add.image(0, 0, 'village_noroofs')
+      .setOrigin(0).setScale(sx, sy)
+      .setCrop(28 * TILE_SIZE - 25, 2 * TILE_SIZE, 2 * TILE_SIZE + 25, 6 * TILE_SIZE)
+      .setDepth(12);
 
     // Hover — fade individual roof when cursor enters its bounding box
     this.input.on('pointermove', (ptr) => {
