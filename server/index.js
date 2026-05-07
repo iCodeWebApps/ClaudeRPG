@@ -2,10 +2,17 @@ const express    = require('express');
 const http       = require('http');
 const WebSocket  = require('ws');
 const path       = require('path');
+const fs         = require('fs');
 const startWatcher = require('./watcher.js');
 
-const PORT = 3131;
-const app  = express();
+const PORT       = 3131;
+const app        = express();
+const STATE_FILE = path.join(__dirname, 'state.json');
+
+function loadState()    { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return {}; } }
+function saveState(s)   { fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
+
+let gameState = loadState();
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname, '../client')));
@@ -60,6 +67,9 @@ app.post('/event', (req, res) => {
 });
 
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+app.get('/state',  (req, res) => res.json(gameState));
+app.post('/state', (req, res) => { Object.assign(gameState, req.body); saveState(gameState); res.json({ ok: true }); });
 
 // Asset save endpoint — used by extraction scripts
 app.post('/save-asset', (req, res) => {

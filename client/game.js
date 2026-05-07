@@ -120,7 +120,7 @@ const ZONES = {
 const FISHING_ZONE  = { x: 651, y: 366, w: 78, h: 49 };  // tiles col 25-27, row 15-16
 const FISHING_SNAP  = { x: 690, y: 390 };                 // where the character stands to fish
 const FISHING_OFFSETS = [0, -36, 36, -72, 72];           // x offsets for multiple fishers
-const FISHING_CHARS = new Set(['character1', 'character2']);
+const FISHING_CHARS = new Set(['character1', 'character2']); // only these have rod animations
 
 const TOOL_MAP = {
   Read:      { zone: 'inn',      label: 'studying...'    },
@@ -489,7 +489,7 @@ class VillageScene extends Phaser.Scene {
       });
 
       chicken.on('drag', (pointer, dragX, dragY) => {
-        chicken.setPosition(dragX, dragY);
+        chicken.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
       });
 
       chicken.on('dragend', () => {
@@ -608,12 +608,14 @@ class VillageScene extends Phaser.Scene {
           egg.sprite.destroy();
           this.eggs.splice(idx, 1);
           doodle._eggsEaten = (doodle._eggsEaten || 0) + 1;
+          fetch('/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eggsEaten: doodle._eggsEaten }) }).catch(() => {});
           this.time.delayedCall(300, wander);
         },
       });
     };
 
     doodle._eggsEaten = 0;
+    fetch('/state').then(r => r.json()).then(s => { doodle._eggsEaten = s.eggsEaten || 0; }).catch(() => {});
     doodle.setInteractive();
     this.input.setDraggable(doodle);
 
@@ -628,7 +630,7 @@ class VillageScene extends Phaser.Scene {
     });
 
     doodle.on('drag', (pointer, dragX, dragY) => {
-      doodle.setPosition(dragX, dragY);
+      doodle.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
     });
 
     doodle.on('dragend', () => {
@@ -762,7 +764,7 @@ class VillageScene extends Phaser.Scene {
     });
 
     dog.on('drag', (pointer, dragX, dragY) => {
-      dog.setPosition(dragX, dragY);
+      dog.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
     });
 
     dog.on('dragend', () => {
@@ -888,16 +890,21 @@ class VillageScene extends Phaser.Scene {
     if (!v || !v.sprite._fishing) return;
     const key = v.cfg.key;
     v.bubble.setText('fishing...');
-    v.sprite.play(`${key}-fish-cast`);
-    v.sprite.once('animationcomplete', () => {
-      if (v.sprite._fishing) this._fishWait(v);
-    });
+    if (FISHING_CHARS.has(key)) {
+      v.sprite.play(`${key}-fish-cast`);
+      v.sprite.once('animationcomplete', () => {
+        if (v.sprite._fishing) this._fishWait(v);
+      });
+    } else {
+      v.sprite.play(`${key}-idle`);
+      this._fishWait(v);
+    }
   }
 
   _fishWait(v) {
     if (!v.sprite._fishing) return;
     const key = v.cfg.key;
-    v.sprite.play(`${key}-fish-wait`);
+    if (FISHING_CHARS.has(key)) v.sprite.play(`${key}-fish-wait`);
     v.bubble.setText('...🎣...');
 
     if (v.sprite._fishTween) v.sprite._fishTween.remove();
@@ -922,10 +929,14 @@ class VillageScene extends Phaser.Scene {
     if (!v.sprite._fishing) return;
     const key = v.cfg.key;
     v.bubble.setText('Got one! 🐟');
-    v.sprite.play(`${key}-fish-bite`);
-    v.sprite.once('animationcomplete', () => {
-      if (v.sprite._fishing) this.startFishing(v);
-    });
+    if (FISHING_CHARS.has(key)) {
+      v.sprite.play(`${key}-fish-bite`);
+      v.sprite.once('animationcomplete', () => {
+        if (v.sprite._fishing) this.startFishing(v);
+      });
+    } else {
+      this.time.delayedCall(600, () => { if (v.sprite._fishing) this.startFishing(v); });
+    }
   }
 
   buildMap() {
@@ -1083,9 +1094,11 @@ class VillageScene extends Phaser.Scene {
     });
 
     sprite.on('drag', (pointer, dragX, dragY) => {
-      sprite.setPosition(dragX, dragY);
-      label.setPosition(dragX, dragY - 40);
-      bubble.setPosition(dragX, dragY + 30);
+      const cx = Phaser.Math.Clamp(dragX, 0, GAME_W);
+      const cy = Phaser.Math.Clamp(dragY, 0, GAME_H);
+      sprite.setPosition(cx, cy);
+      label.setPosition(cx, cy - 40);
+      bubble.setPosition(cx, cy + 30);
     });
 
     sprite.on('dragend', () => {
@@ -1107,11 +1120,10 @@ class VillageScene extends Phaser.Scene {
       sprite.looking = false;
       sprite.idleMs  = 0;
 
-      // Start fishing if dropped near the pond — only rod-carrying characters
-      const canFish = FISHING_CHARS.has(this.villagers[agentId]?.cfg.key);
+      // Start fishing if dropped near the pond — all villagers can fish
       const inZone  = sprite.x >= FISHING_ZONE.x && sprite.x <= FISHING_ZONE.x + FISHING_ZONE.w
                    && sprite.y >= FISHING_ZONE.y && sprite.y <= FISHING_ZONE.y + FISHING_ZONE.h;
-      if (canFish && inZone) {
+      if (inZone) {
         this._stopFishing(sprite);
         const offset = FISHING_OFFSETS.find(o => !this.fishingSlots.has(o)) ?? 0;
         this.fishingSlots.add(offset);
@@ -1200,7 +1212,7 @@ class VillageScene extends Phaser.Scene {
         }
 
         // Auto-fish if arrived in the fishing zone
-        if (FISHING_CHARS.has(v.cfg.key)) {
+        {
           const inZone = v.sprite.x >= FISHING_ZONE.x && v.sprite.x <= FISHING_ZONE.x + FISHING_ZONE.w
                       && v.sprite.y >= FISHING_ZONE.y && v.sprite.y <= FISHING_ZONE.y + FISHING_ZONE.h;
           if (inZone) {
