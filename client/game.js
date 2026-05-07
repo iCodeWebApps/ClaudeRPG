@@ -943,8 +943,8 @@ class VillageScene extends Phaser.Scene {
 
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
-      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 460, clipTriW: 185, clipTriH: 114 },
-      { key: 'lodge',    tx: 1070, ty: 0, tw: 330, th: 450 },
+      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 510, clipTriW: 185, clipTriH: 114 },
+      { key: 'lodge',    tx: 1070, ty: 30, tw: 430, th: 380 },
     ];
 
     this.roofSprites = {};
