@@ -13,17 +13,17 @@ const NAV = [
   [[18,19],[27,29]],                              // row  0  (-20-26)
   [[14,29]],                                      // row  1  (+21)
   [[10,20],[27,29]],                              // row  2  (-22,23)
-  [[9,11],[17,20],[22,25],[27,29]],               // row  3  (+27)
-  [[8,10],[17,20],[22,29]],                       // row  4  (-11)
-  [[6,9],[12,12],[14,15],[17,20],[22,29]],          // row  5  (+22-24 merged)
-  [[3,8],[12,12],[14,15],[17,20],[22,29]],          // row  6  (+22-24 merged)
-  [[1,8],[10,10],[12,12],[14,15],[17,20],[22,29]], // row  7  (-13 +10)
+  [[9,11],[18,20],[22,25],[27,29]],               // row  3  (+27 -17)
+  [[8,10],[18,20],[22,29]],                       // row  4  (-11 -17)
+  [[6,9],[12,12],[14,15],[18,20],[22,29]],         // row  5  (+22-24 merged -17)
+  [[3,8],[12,12],[14,15],[18,20],[22,29]],         // row  6  (+22-24 merged -17)
+  [[1,8],[10,10],[12,12],[14,15],[18,20],[22,29]], // row  7  (-13 +10 -17)
   [[1,3],[5,8],[10,12],[14,14],[20,20],[28,29]],  // row  8  (-13 -19 -22-27 -15)
   [[1,8],[10,14],[20,20],[28,29]],                 // row  9  (-23-27 -15 +2,3)
   [[1,8],[12,15],[20,20],[28,29]],                 // row 10  (-24-27 +3)
   [[1,2],[5,8],[12,15],[20,20],[22,29]],           // row 11  (+12,13 -3-4)
   [[1,2],[6,8],[15,15],[17,17],[19,29]],           // row 12  (-16)
-  [[0,2],[6,9],[15,15],[17,29]],                   // row 13  (-16 -10 -3-4)
+  [[0,2],[6,8],[15,15],[17,29]],                   // row 13  (-16 -10 -3-4 -9)
   [[0,2],[6,10],[15,15],[17,20],[24,29]],          // row 14  (-12-14 -3-4)
   [[0,2],[6,10],[15,15],[17,20],[25,27]],           // row 15  (-11 -14 -3-4 +25-27)
   [[0,4],[6,6],[9,20],[22,29]],                   // row 16  (+22-29)
@@ -117,8 +117,8 @@ const ZONES = {
   commons:  { x: 70,  y: 413, label: 'The Commons'   }, // bottom-left rocks + grass
 };
 
-const FISHING_ZONE  = { x: 550, y: 250, w: 250, h: 250 }; // bottom-right 250×250
-const FISHING_SNAP  = { x: 700, y: 385 };                 // where the character stands to fish
+const FISHING_ZONE  = { x: 651, y: 366, w: 78, h: 49 };  // tiles col 25-27, row 15-16
+const FISHING_SNAP  = { x: 690, y: 390 };                 // where the character stands to fish
 const FISHING_OFFSETS = [0, -36, 36, -72, 72];           // x offsets for multiple fishers
 const FISHING_CHARS = new Set(['character1', 'character2']);
 
@@ -622,8 +622,8 @@ class VillageScene extends Phaser.Scene {
     });
 
     doodle.on('dragstart', () => {
-      this.tweens.killTweensOf(doodle);
       wakeUp();
+      this.tweens.killTweensOf(doodle);
       doodle.setDepth(25);
     });
 
@@ -756,8 +756,8 @@ class VillageScene extends Phaser.Scene {
     this.input.setDraggable(dog);
 
     dog.on('dragstart', () => {
-      this.tweens.killTweensOf(dog);
       wakeUp();
+      this.tweens.killTweensOf(dog);
       dog.setDepth(25);
     });
 
@@ -1187,6 +1187,29 @@ class VillageScene extends Phaser.Scene {
           v.label.setPosition(v.sprite.x, v.sprite.y - 40);
           v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
           continue;
+        }
+
+        // Auto-fish if arrived in the fishing zone
+        if (FISHING_CHARS.has(v.cfg.key)) {
+          const inZone = v.sprite.x >= FISHING_ZONE.x && v.sprite.x <= FISHING_ZONE.x + FISHING_ZONE.w
+                      && v.sprite.y >= FISHING_ZONE.y && v.sprite.y <= FISHING_ZONE.y + FISHING_ZONE.h;
+          if (inZone) {
+            const offset = FISHING_OFFSETS.find(o => !this.fishingSlots.has(o)) ?? 0;
+            this.fishingSlots.add(offset);
+            v.sprite._fishingSlot = offset;
+            const sx = FISHING_SNAP.x + offset, sy = FISHING_SNAP.y;
+            v.sprite.setPosition(sx, sy);
+            v.sprite.body.reset(sx, sy);
+            v.label.setPosition(sx, sy - 40);
+            v.bubble.setPosition(sx, sy + 30);
+            v.sprite.targetX = sx;
+            v.sprite.targetY = sy;
+            v.sprite._fishing     = true;
+            v.sprite._preFishText = v.sprite._bubbleRef?.text ?? null;
+            v.sprite.setFlipX(false);
+            this.startFishing(v);
+            continue;
+          }
         }
 
         // Idle look animation — tick the per-villager timer
