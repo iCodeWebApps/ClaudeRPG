@@ -10,11 +10,11 @@ const SRC_W = 1536, SRC_H = 1024, GAME_W = 800, GAME_H = 500;
 
 // Walkable column ranges per row [colStart, colEnd] inclusive
 const NAV = [
-  [[18,19],[27,29]],                              // row  0  (-20-26)
-  [[14,29]],                                      // row  1  (+21)
+  [[18,19],[28,29]],                              // row  0  (-20-26 -27)
+  [[14,19],[28,29]],                               // row  1  (+21 -20-27)
   [[10,20],[27,29]],                              // row  2  (-22,23)
-  [[9,11],[18,20],[22,25],[27,29]],               // row  3  (+27 -17)
-  [[8,10],[18,20],[22,29]],                       // row  4  (-11 -17)
+  [[9,11],[18,20],[22,24],[26,29]],               // row  3  (+27 -17 -25 +26)
+  [[8,10],[18,20],[22,24],[26,29]],               // row  4  (-11 -17 -25)
   [[6,9],[12,12],[14,15],[18,20],[22,29]],         // row  5  (+22-24 merged -17)
   [[3,8],[12,12],[14,15],[18,20],[22,29]],         // row  6  (+22-24 merged -17)
   [[1,8],[10,10],[12,12],[14,15],[18,20],[22,29]], // row  7  (-13 +10 -17)
@@ -980,11 +980,21 @@ class VillageScene extends Phaser.Scene {
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
 
-    // Lodge porch — always on top of all game objects, never fades
+    // Lodge porch — base, interior cap, then roof cap (fades with lodge hover)
+    this.add.image(0, 0, 'village')
+      .setOrigin(0).setScale(sx, sy)
+      .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
+      .setDepth(12);
     this.add.image(0, 0, 'village_noroofs')
       .setOrigin(0).setScale(sx, sy)
-      .setCrop(28 * TILE_SIZE - 25, 2 * TILE_SIZE, 2 * TILE_SIZE + 25, 6 * TILE_SIZE)
-      .setDepth(12);
+      .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
+      .setDepth(13);
+    const porchRoof = this.add.image(0, 0, 'village')
+      .setOrigin(0).setScale(sx, sy)
+      .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
+      .setDepth(14);
+    const lodge = this.roofSprites['lodge'];
+    this.roofSprites['porch_roof'] = { img: porchRoof, gx: lodge.gx, gy: lodge.gy, gw: lodge.gw, gh: lodge.gh };
 
     // Hover — fade individual roof when cursor enters its bounding box
     this.input.on('pointermove', (ptr) => {
