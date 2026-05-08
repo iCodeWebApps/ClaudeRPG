@@ -67,27 +67,28 @@ function broadcast(event) {
   }
 }
 
-// Manual event injection (for testing)
-app.post('/event', (req, res) => {
-  broadcast(req.body);
-  res.json({ ok: true });
-});
-
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.get('/state',  (req, res) => res.json(gameState));
 app.post('/state', (req, res) => { Object.assign(gameState, req.body); saveState(gameState); res.json({ ok: true }); });
 
-// Asset save endpoint — used by extraction scripts
+// Asset save endpoint — used by sprite extraction scripts
+const ASSETS_DIR = path.resolve(path.join(__dirname, '../client/assets'));
 app.post('/save-asset', (req, res) => {
   const { name, data } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'invalid name' });
+  const safeName = path.basename(name);
+  const dest = path.resolve(ASSETS_DIR, safeName);
+  if (!dest.startsWith(ASSETS_DIR + path.sep) && dest !== ASSETS_DIR) {
+    return res.status(400).json({ error: 'invalid filename' });
+  }
   const base64 = data.replace(/^data:image\/\w+;base64,/, '');
   const buf = Buffer.from(base64, 'base64');
-  require('fs').writeFileSync(path.join(__dirname, '../client/assets', name), buf);
-  res.json({ ok: true, name });
+  fs.writeFileSync(dest, buf);
+  res.json({ ok: true, name: safeName });
 });
 
-server.listen(PORT, async () => {
+server.listen(PORT, '127.0.0.1', async () => {
   console.log(`ClaudeRPG running at http://localhost:${PORT}`);
   startWatcher(broadcast);
   const url = `http://localhost:${PORT}`;
