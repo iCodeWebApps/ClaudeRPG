@@ -23,8 +23,8 @@ const NAV = [
   [[1,8],[12,15],[20,20],[28,29]],                 // row 10  (-24-27 +3)
   [[1,2],[5,8],[12,15],[20,20],[22,29]],           // row 11  (+12,13 -3-4)
   [[1,2],[6,8],[15,15],[17,17],[20,29]],           // row 12  (-16 -19)
-  [[0,2],[6,7],[15,15],[17,29]],                   // row 13  (-16 -10 -3-4 -9 -8)
-  [[0,2],[6,10],[15,15],[17,20],[24,29]],          // row 14  (-12-14 -3-4)
+  [[0,2],[6,9],[15,15],[17,29]],                   // row 13
+  [[0,2],[6,10],[15,15],[17,20],[24,29]],            // row 14
   [[0,2],[6,10],[15,15],[17,20],[25,27]],           // row 15  (-11 -14 -3-4 +25-27)
   [[0,4],[6,6],[9,20],[22,29]],                   // row 16  (+22-29)
   [[0,4],[6,6],[9,20],[29,29]],                   // row 17  (-24-28 -21-23)
@@ -193,6 +193,10 @@ class VillageScene extends Phaser.Scene {
     this.load.image('cattledog_step',  'assets/cattledog_step.png');
     this.load.image('cattledog_sleep', 'assets/cattledog_sleep.png');
 
+    // Duck
+    this.load.image('duck',      'assets/duck.png');
+    this.load.image('duck_step', 'assets/duck_step.png');
+
     // Rain drop — 1×6 light-blue streak, generated without a file
     const rg = this.make.graphics({ x: 0, y: 0, add: false });
     rg.fillStyle(0xaaddff, 1);
@@ -257,6 +261,7 @@ class VillageScene extends Phaser.Scene {
     this.spawnChickens();
     this.spawnDoodle();
     this.spawnCattleDog();
+    this.spawnDuck();
 
     // Hourly chicken ritual
     this.time.addEvent({
@@ -320,7 +325,7 @@ class VillageScene extends Phaser.Scene {
         g.strokeRect(x, y, tw, th);
 
         const label = this._txt(x + tw / 2, y + th / 2, `${c},${r}`, {
-          fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+          fontSize: '8px', color: '#ffffff', fontFamily: 'Arial',
           stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5);
         container.add(label);
@@ -330,9 +335,8 @@ class VillageScene extends Phaser.Scene {
 
   // ── DAY / NIGHT ──────────────────────────────────────────────────────────
   buildDayNight() {
-    // Overlay dims the whole scene (depth 13 — above roofs, below labels)
-    this.dayOverlay = this.add.rectangle(400, 250, 800, 500, 0x000000, 0)
-      .setDepth(13);
+    // Overlay dims the whole scene (depth 13 — above all porch/roof layers, below labels)
+    this.dayOverlay = this.add.rectangle(400, 250, 800, 500, 0x000000, 0).setDepth(13);
 
 
     this.updateDayNight();
@@ -399,12 +403,12 @@ class VillageScene extends Phaser.Scene {
     const W = 160, PAD = 7, LH = 13;
     let cy = PAD;
     const title = this._txt(PAD, cy, '🐾 Doodle', {
-      fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
+      fontSize: '11px', color: '#88aaff', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0);
     this.histPanel.add(title); this.histPanel._lines.push(title);
     cy += LH + 2;
     const stat = this._txt(PAD, cy, `Eggs eaten: ${eggsEaten}`, {
-      fontSize: '7px', color: '#ffdd88', fontFamily: 'monospace',
+      fontSize: '11px', color: '#ffdd88', fontFamily: 'Arial',
     }).setOrigin(0);
     this.histPanel.add(stat); this.histPanel._lines.push(stat);
     cy += LH;
@@ -428,7 +432,7 @@ class VillageScene extends Phaser.Scene {
     let cy = PAD;
 
     const title = this._txt(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
-      fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
+      fontSize: '11px', color: '#88aaff', fontFamily: 'Arial', fontStyle: 'bold',
     }).setOrigin(0);
     this.histPanel.add(title); this.histPanel._lines.push(title);
     cy += LH + 3;
@@ -436,7 +440,7 @@ class VillageScene extends Phaser.Scene {
     const items = v.sprite.history.slice(-8).reverse();
     if (items.length === 0) {
       const t = this._txt(PAD, cy, '(no events yet)', {
-        fontSize: '7px', color: '#445566', fontFamily: 'monospace',
+        fontSize: '10px', color: '#445566', fontFamily: 'Arial',
       }).setOrigin(0);
       this.histPanel.add(t); this.histPanel._lines.push(t);
       cy += LH;
@@ -444,7 +448,7 @@ class VillageScene extends Phaser.Scene {
       for (const item of items) {
         const isTool = item.startsWith('→');
         const t = this._txt(PAD, cy, item, {
-          fontSize: '7px', color: isTool ? '#88ccff' : '#aaaaaa', fontFamily: 'monospace',
+          fontSize: '10px', color: isTool ? '#88ccff' : '#aaaaaa', fontFamily: 'Arial',
           wordWrap: { width: W - PAD * 2 },
         }).setOrigin(0);
         this.histPanel.add(t); this.histPanel._lines.push(t);
@@ -844,6 +848,148 @@ class VillageScene extends Phaser.Scene {
     this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
   }
 
+  // ── DUCK ─────────────────────────────────────────────────────────────────
+  spawnDuck() {
+    const SCALE    = 0.033;
+    const SPEED    = 48;   // px/s — slower than dogs, waddly
+    const FOLLOW_R = 70;   // px — chase threshold
+
+    const duck = this.add.image(320, 340, 'duck').setScale(SCALE).setDepth(5);
+    if (this.renderer.gl) {
+      this.renderer.pipelines.addPostPipeline('OutlinePostFX', OutlinePostFX);
+      duck.setPostPipeline('OutlinePostFX');
+    }
+
+    const walkToPath = (tx, ty, onDone) => {
+      if (duck._walkTimer) { duck._walkTimer.remove(); duck._walkTimer = null; }
+      this.tweens.killTweensOf(duck);
+      let stepFrame = false;
+      duck._walkTimer = this.time.addEvent({
+        delay: 110, loop: true,
+        callback: () => { stepFrame = !stepFrame; duck.setTexture(stepFrame ? 'duck_step' : 'duck'); },
+      });
+      const st  = gameToTile(duck.x, duck.y);
+      const et  = gameToTile(tx, ty);
+      const stW = GRID[st.r]?.[st.c] ? st : nearestWalkable(st.c, st.r);
+      const etW = GRID[et.r]?.[et.c] ? et : nearestWalkable(et.c, et.r);
+      const path = aStar(stW.c, stW.r, etW.c, etW.r);
+      const waypoints = path && path.length > 1
+        ? [...path.slice(1).map(t => tileToGame(t.c, t.r)), { x: tx, y: ty }]
+        : [{ x: tx, y: ty }];
+      let i = 0;
+      const step = () => {
+        if (i >= waypoints.length) {
+          if (duck._walkTimer) { duck._walkTimer.remove(); duck._walkTimer = null; }
+          duck.setTexture('duck');
+          onDone();
+          return;
+        }
+        const wp  = waypoints[i++];
+        const dur = Math.max(80, Math.hypot(wp.x - duck.x, wp.y - duck.y) / SPEED * 1000);
+        duck.setFlipX(wp.x < duck.x);
+        this.tweens.add({ targets: duck, x: wp.x, y: wp.y, duration: dur, ease: 'Linear', onComplete: step });
+      };
+      step();
+    };
+
+    const idle = () => {
+      this.tweens.add({
+        targets: duck, y: duck.y + 3, duration: 480,
+        yoyo: true, repeat: 1,
+        onComplete: () => this.time.delayedCall(Phaser.Math.Between(600, 2000), follow),
+      });
+    };
+
+    const follow = () => {
+      if (duck._dragging) return;
+
+      // Drop target if it disconnected
+      if (duck._targetId && !this.villagers[duck._targetId]) duck._targetId = null;
+
+      // Upgrade to character2 if one is available
+      if (!duck._targetId || this.villagers[duck._targetId]?.cfg.key !== 'character2') {
+        const c2 = Object.entries(this.villagers).find(([, v]) => v.cfg.key === 'character2');
+        if (c2) duck._targetId = c2[0];
+      }
+
+      // Fall back to any agent
+      if (!duck._targetId) {
+        const entries = Object.entries(this.villagers);
+        if (entries.length) duck._targetId = entries[Math.floor(Math.random() * entries.length)][0];
+      }
+
+      const target = duck._targetId ? this.villagers[duck._targetId] : null;
+
+      if (!target) {
+        const dest = this.pickWalkableTile(duck.x, duck.y, 8);
+        if (!dest) { this.time.delayedCall(1500, follow); return; }
+        walkToPath(dest.x, dest.y, () => this.time.delayedCall(Phaser.Math.Between(2000, 4000), follow));
+        return;
+      }
+
+      const dx = target.sprite.x - duck.x;
+      const dy = target.sprite.y - duck.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > FOLLOW_R) {
+        // Stop ~45px away rather than walking into the agent
+        const norm = 1 / dist;
+        const tx = Phaser.Math.Clamp(target.sprite.x - dx * norm * 45, 12, 788);
+        const ty = Phaser.Math.Clamp(target.sprite.y - dy * norm * 20, 12, 488);
+        walkToPath(tx, ty, idle);
+      } else {
+        idle();
+      }
+    };
+
+    duck._targetId = null;
+    duck._dragging = false;
+
+    // ── Drag to relocate ─────────────────────────────────────────────────
+    duck.setInteractive();
+    this.input.setDraggable(duck);
+    let _downX = 0, _downY = 0;
+    duck.on('pointerdown', ptr => { _downX = ptr.x; _downY = ptr.y; });
+    duck.on('dragstart', () => {
+      duck._dragging = true;
+      if (duck._walkTimer) { duck._walkTimer.remove(); duck._walkTimer = null; }
+      this.tweens.killTweensOf(duck);
+      duck.setTexture('duck').setDepth(25);
+    });
+    duck.on('drag', (_, gx, gy) => duck.setPosition(gx, gy));
+    duck.on('dragend', (ptr) => {
+      duck.setDepth(5);
+      duck._dragging = false;
+      const t    = gameToTile(duck.x, duck.y);
+      const safe = GRID[t.r]?.[t.c] ? t : nearestWalkable(t.c, t.r);
+      const g    = tileToGame(safe.c, safe.r);
+      duck.setPosition(g.x, g.y);
+
+      // Tap vs drag — honk if barely moved, then resume either way
+      if (Math.hypot(ptr.x - _downX, ptr.y - _downY) < 8) {
+        this._duckHonk(duck);
+      }
+      this.time.delayedCall(300, follow);
+    });
+
+
+
+    this.time.delayedCall(800, follow);
+  }
+
+  _duckHonk(duck) {
+    if (duck._honkText) { duck._honkText.destroy(); duck._honkText = null; }
+    duck._honkText = this._txt(duck.x, duck.y - 18, 'Honk!', {
+      fontSize: '11px', color: '#ffffff', fontFamily: 'Arial',
+      stroke: '#000000', strokeThickness: 3,
+      backgroundColor: '#00000055', padding: { x: 4, y: 2 },
+    }).setOrigin(0.5, 1).setDepth(20);
+    this.tweens.add({
+      targets: duck._honkText, alpha: 0, duration: 1200, delay: 900,
+      onComplete: () => { if (duck._honkText) { duck._honkText.destroy(); duck._honkText = null; } },
+    });
+  }
+
   startRitual() {
     if (this.chickens.some(c => c._fleeing)) return;
     const CENTER        = { x: 195, y: 385 }; // Town Green
@@ -1073,10 +1219,19 @@ class VillageScene extends Phaser.Scene {
       duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.InOut',
     });
 
-    // Idle timeout — stop fishing after 4 minutes and wander away
+    // Idle timeout — stop fishing after 4 minutes and walk away
     if (!v.sprite._fishTimeout) {
       v.sprite._fishTimeout = this.time.delayedCall(4 * 60 * 1000, () => {
-        if (v.sprite._fishing) { this._stopFishing(v.sprite); v.sprite._wander?.(); }
+        if (!v.sprite._fishing) return;
+        this._stopFishing(v.sprite);
+        // Walk away from the pond so update()'s auto-fish block doesn't immediately re-trigger
+        const ct   = gameToTile(v.sprite.x, v.sprite.y);
+        const away = tileToGame(Math.max(0, ct.c - 5), ct.r);
+        v.sprite.path        = null;
+        v.sprite.targetX     = away.x;
+        v.sprite.targetY     = away.y;
+        v.sprite.arrived     = false;
+        v.sprite._idleWander = true;
       });
     }
 
@@ -1121,7 +1276,7 @@ class VillageScene extends Phaser.Scene {
 
     const ROOFS = [
       { key: 'workshop', tx:  10, ty: 105, tw: 265, th: 170 },
-      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 505, clipTriW: 185, clipTriH: 114 },
+      { key: 'inn',      tx: 425, ty: 192, tw: 450, th: 505, clipTriW: 185, clipTriH: 114, clipBotTriW: 180, clipBotTriH: 130 },
       { key: 'lodge',    tx: 1070, ty: 30, tw: 305, th: 380 },
     ];
 
@@ -1138,18 +1293,27 @@ class VillageScene extends Phaser.Scene {
       const gx = def.tx * sx, gy = def.ty * sy;
       const gw = def.tw * sx, gh = def.th * sy;
 
-      // Optional top-left triangle cutout (clips a triangle so lower layer shows through)
-      if (def.clipTriW && def.clipTriH) {
-        const triW = def.clipTriW * sx;
-        const triH = def.clipTriH * sy;
+      // Geometry mask — clips top-left and/or bottom-left triangles
+      const hasTopClip = def.clipTriW    && def.clipTriH;
+      const hasBotClip = def.clipBotTriW && def.clipBotTriH;
+      if (hasTopClip || hasBotClip) {
         const mask = this.make.graphics({ add: false });
         mask.fillStyle(0xffffff);
         mask.beginPath();
-        mask.moveTo(gx,        gy + triH);
-        mask.lineTo(gx + triW, gy);
-        mask.lineTo(gx + gw,   gy);
-        mask.lineTo(gx + gw,   gy + gh);
-        mask.lineTo(gx,        gy + gh);
+        if (hasTopClip) {
+          mask.moveTo(gx,                       gy + def.clipTriH    * sy);
+          mask.lineTo(gx + def.clipTriW * sx,   gy);
+        } else {
+          mask.moveTo(gx, gy);
+        }
+        mask.lineTo(gx + gw, gy);
+        mask.lineTo(gx + gw, gy + gh);
+        if (hasBotClip) {
+          mask.lineTo(gx + def.clipBotTriW * sx, gy + gh);
+          mask.lineTo(gx,                        gy + gh - def.clipBotTriH * sy);
+        } else {
+          mask.lineTo(gx, gy + gh);
+        }
         mask.closePath();
         mask.fillPath();
         img.setMask(mask.createGeometryMask());
@@ -1158,7 +1322,8 @@ class VillageScene extends Phaser.Scene {
       this.roofSprites[def.key] = { img, gx, gy, gw, gh };
     }
 
-    // Lodge porch — base, interior cap, then roof cap (fades with lodge hover)
+    // Lodge porch — base (12), interior cap (12.5), roof cap (12.8)
+    // All below the day overlay at depth 13 so night tints them correctly
     this.add.image(0, 0, 'village')
       .setOrigin(0).setScale(sx, sy)
       .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
@@ -1166,11 +1331,11 @@ class VillageScene extends Phaser.Scene {
     this.add.image(0, 0, 'village_noroofs')
       .setOrigin(0).setScale(sx, sy)
       .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
-      .setDepth(13);
+      .setDepth(12.5);
     const porchRoof = this.add.image(0, 0, 'village')
       .setOrigin(0).setScale(sx, sy)
       .setCrop(28 * TILE_SIZE - 40, 2 * TILE_SIZE, 2 * TILE_SIZE + 30, 6 * TILE_SIZE)
-      .setDepth(14);
+      .setDepth(12.8);
     const lodge = this.roofSprites['lodge'];
     this.roofSprites['porch_roof'] = { img: porchRoof, gx: lodge.gx, gy: lodge.gy, gw: lodge.gw, gh: lodge.gh };
 
@@ -1226,14 +1391,14 @@ class VillageScene extends Phaser.Scene {
 
     const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
     const label  = this._txt(pos.x, pos.y - 40, name, {
-      fontSize: '10px', color: '#ffe082', fontFamily: 'monospace',
+      fontSize: '10px', color: '#ffe082', fontFamily: 'Arial',
       stroke: '#000000', strokeThickness: 3,
-      backgroundColor: '#000000bb', padding: { x: 4, y: 2 },
+      backgroundColor: '#00000055', padding: { x: 4, y: 2 },
     }).setOrigin(0.5, 1).setDepth(15);
     const bubble = this._txt(pos.x, pos.y + 30, 'wandering...', {
-      fontSize: '10px', color: '#aaffaa', fontFamily: 'monospace',
+      fontSize: '10px', color: '#aaffaa', fontFamily: 'Arial',
       stroke: '#000000', strokeThickness: 3,
-      backgroundColor: '#000000bb', padding: { x: 4, y: 2 },
+      backgroundColor: '#00000055', padding: { x: 4, y: 2 },
     }).setOrigin(0.5, 0).setDepth(15);
 
     sprite._bubbleRef = bubble;
@@ -1633,6 +1798,36 @@ class VillageScene extends Phaser.Scene {
   }
 }
 
+// ── OUTLINE POST-FX ────────────────────────────────────────────────────────
+class OutlinePostFX extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
+  constructor(game) {
+    super({
+      game,
+      name: 'OutlinePostFX',
+      fragShader: `
+        precision mediump float;
+        uniform sampler2D uMainSampler;
+        uniform vec2 uTexelSize;
+        varying vec2 outTexCoord;
+        void main () {
+          vec4 c = texture2D(uMainSampler, outTexCoord);
+          if (c.a > 0.5) { gl_FragColor = c; return; }
+          float a = texture2D(uMainSampler, outTexCoord + vec2( uTexelSize.x, 0.0)).a
+                  + texture2D(uMainSampler, outTexCoord + vec2(-uTexelSize.x, 0.0)).a
+                  + texture2D(uMainSampler, outTexCoord + vec2(0.0,  uTexelSize.y)).a
+                  + texture2D(uMainSampler, outTexCoord + vec2(0.0, -uTexelSize.y)).a;
+          gl_FragColor = (a > 0.5) ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(0.0);
+        }
+      `,
+    });
+  }
+
+  onDraw(renderTarget) {
+    this.set2f('uTexelSize', 0.55 / renderTarget.width, 0.55 / renderTarget.height);
+    this.bindAndDraw(renderTarget);
+  }
+}
+
 // ── BOOT ───────────────────────────────────────────────────────────────────
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -1640,11 +1835,12 @@ new Phaser.Game({
   height: 500,
   backgroundColor: '#3a6a28',
   antialias: true,
+  roundPixels: true,
   physics: {
     default: 'arcade',
     arcade: { gravity: { y: 0 }, debug: false },
   },
   scene: VillageScene,
   parent: document.body,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, zoom: 2 },
 });
