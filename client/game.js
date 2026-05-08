@@ -170,6 +170,9 @@ class VillageScene extends Phaser.Scene {
     this.load.spritesheet('character1', 'assets/character1.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('character2', 'assets/character2.png', { frameWidth: 64, frameHeight: 64 });
 
+    // Skeleton boss — 64×64 frames, 18 cols wide (1152px sheet)
+    this.load.spritesheet('skeleton', 'assets/skeleton.png', { frameWidth: 64, frameHeight: 64 });
+
     // Fishing frames are 128×128 (rod extends right, casting pose goes tall)
     // Same PNG, different frame config: 13 cols × 31 rows
     this.load.spritesheet('character1-fishing', 'assets/character1.png', { frameWidth: 128, frameHeight: 128 });
@@ -246,6 +249,19 @@ class VillageScene extends Phaser.Scene {
       this.anims.create({ key: `${key}-look-down`,  frames: this.anims.generateFrameNumbers(key, { start: 18, end: 20 }), frameRate: 5, repeat: 0 });
     }
 
+    // Skeleton boss — 18 cols/row; walk rows 8-11 (9 frames each), death row 20 (6 frames)
+    this.anims.create({ key: 'skeleton-up',    frames: this.anims.generateFrameNumbers('skeleton', { start: 144, end: 152 }), frameRate: 10, repeat: -1 });
+    this.anims.create({ key: 'skeleton-left',  frames: this.anims.generateFrameNumbers('skeleton', { start: 162, end: 170 }), frameRate: 10, repeat: -1 });
+    this.anims.create({ key: 'skeleton-down',  frames: this.anims.generateFrameNumbers('skeleton', { start: 180, end: 188 }), frameRate: 10, repeat: -1 });
+    this.anims.create({ key: 'skeleton-right', frames: this.anims.generateFrameNumbers('skeleton', { start: 198, end: 206 }), frameRate: 10, repeat: -1 });
+    this.anims.create({ key: 'skeleton-idle',  frames: [{ key: 'skeleton', frame: 180 }], frameRate: 1 });
+    this.anims.create({ key: 'skeleton-die',   frames: this.anims.generateFrameNumbers('skeleton', { start: 360, end: 365 }), frameRate: 8, repeat: 0 });
+    // Skeleton slash/attack — rows 12-15 (6 frames each, same direction order as walk)
+    this.anims.create({ key: 'skeleton-slash-up',    frames: this.anims.generateFrameNumbers('skeleton', { start: 216, end: 221 }), frameRate: 12, repeat: 0 });
+    this.anims.create({ key: 'skeleton-slash-left',  frames: this.anims.generateFrameNumbers('skeleton', { start: 234, end: 239 }), frameRate: 12, repeat: 0 });
+    this.anims.create({ key: 'skeleton-slash-down',  frames: this.anims.generateFrameNumbers('skeleton', { start: 252, end: 257 }), frameRate: 12, repeat: 0 });
+    this.anims.create({ key: 'skeleton-slash-right', frames: this.anims.generateFrameNumbers('skeleton', { start: 270, end: 275 }), frameRate: 12, repeat: 0 });
+
     // ── Physics group — collider added once, handles all villager separation
     this.villagerGroup = this.physics.add.group();
     this.physics.add.collider(this.villagerGroup, this.villagerGroup);
@@ -286,11 +302,19 @@ class VillageScene extends Phaser.Scene {
     this._moveMode       = false;
     this._hovTarget      = null;
     this._activeCombats  = new Map(); // attacker → combat state object
+    this._skeleton          = null;
+    this._skeletonFighters  = new Map(); // chicken → { phase, nextHitMs }
+    this._skeletonNextHitMs = 0;
     window._rp = this;
 
     // Hover targeting — red glow on rival when a chicken is selected
     this.input.on('pointermove', (ptr, hits) => {
       if (!this._selEntity || this._selEntityType !== 'chicken') {
+        if (this._hovTarget) { this._removeHovGlow(this._hovTarget); this._hovTarget = null; }
+        return;
+      }
+      // While skeleton is alive, chickens ignore each other
+      if (this._skeleton && !this._skeleton._ko) {
         if (this._hovTarget) { this._removeHovGlow(this._hovTarget); this._hovTarget = null; }
         return;
       }
@@ -331,10 +355,11 @@ class VillageScene extends Phaser.Scene {
 
     this._scheduleDanceRitual();
 
-    // G key toggles navmesh grid overlay
+    // G=navmesh, R=rain, D=dance ritual, S=summon skeleton boss
     this.input.keyboard.on('keydown-G', () => this.toggleNavGrid());
     this.input.keyboard.on('keydown-R', () => this._startRain());
     this.input.keyboard.on('keydown-D', () => this.startDanceRitual());
+    this.input.keyboard.on('keydown-S', () => this._spawnSkeleton());
     if (new URLSearchParams(window.location.search).has('grid')) {
       this.toggleNavGrid();
       history.replaceState(null, '', '/');
@@ -435,6 +460,141 @@ class VillageScene extends Phaser.Scene {
   }
 
 
+  // ── SKELETON BOSS ────────────────────────────────────────────────────────
+  _spawnSkeleton() {
+    if (this._skeleton && !this._skeleton._ko) return; // already alive
+
+    // Interrupt dance ritual
+    for (const chicken of this.chickens) {
+      if (chicken._inRitual || chicken._fleeing) {
+        this.tweens.killTweensOf(chicken);
+        chicken._fleeing  = false;
+        chicken._inRitual = false;
+      }
+    }
+
+    // Interrupt chicken vs chicken combat
+    for (const c of [...this._activeCombats.values()]) {
+      this._activeCombats.delete(c.attacker);
+      c.attacker._inCombat = false;
+      c.defender._inCombat = false;
+    }
+
+    // Spawn sprite between tiles 18,0 and 19,0 — top north path
+    const spA = tileToGame(18, 0), spB = tileToGame(19, 0);
+    const spawnX = (spA.x + spB.x) / 2, spawnY = spA.y;
+
+    const sk = this.add.sprite(spawnX, spawnY, 'skeleton')
+      .setScale(0.82).setDepth(6);
+    sk.play('skeleton-down');
+    sk._ko        = false;
+    sk._hp        = 380;
+    sk._maxHp     = 380;
+    sk._attacking = false;
+    sk._taunted   = false;
+
+    const HP_W = 80, HP_H = 4;
+    sk._hpBg   = this.add.rectangle(spawnX, spawnY - 28, HP_W, HP_H, 0x222222, 0.88).setDepth(15);
+    sk._hpFill = this.add.rectangle(spawnX - HP_W / 2, spawnY - 28, HP_W, HP_H, 0xff4444, 0.95)
+      .setOrigin(0, 0.5).setDepth(16);
+    sk._nameLabel = this._txt(spawnX, spawnY - 40, '☠ SKELETON', {
+      fontSize: '10px', color: '#ff6666', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setDepth(15);
+
+    this._skeleton        = sk;
+    this._skeletonNextHitMs = 0;
+
+    // Announce
+    const ann = this._txt(400, 90, '☠  SKELETON APPROACHES!', {
+      fontSize: '16px', color: '#ff4444', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5, 0.5).setDepth(30).setAlpha(0);
+    this.tweens.add({
+      targets: ann, alpha: 1, y: 75, duration: 350, ease: 'Back.Out',
+      onComplete: () => this.time.delayedCall(1600, () =>
+        this.tweens.add({ targets: ann, alpha: 0, duration: 500, onComplete: () => ann.destroy() })),
+    });
+
+    // Send all non-KO chickens to fight
+    for (const chicken of this.chickens) {
+      if (chicken._ko) continue;
+      this.tweens.killTweensOf(chicken);
+      chicken._inCombat  = false;
+      chicken._pinned    = false;
+      chicken._walkToken = {};
+      this._initiateChickenVsSkeleton(chicken);
+    }
+  }
+
+  _initiateChickenVsSkeleton(chicken) {
+    if (chicken._ko || !this._skeleton || this._skeleton._ko) return;
+    this._skeleton._taunted = false; // reset so taunt fires again if chickens die again
+    this.tweens.killTweensOf(chicken);
+    chicken._inCombat = true;
+    chicken._pinned   = true;
+    this._skeletonFighters.set(chicken, {
+      phase: 'approach',
+      nextHitMs: 0,
+    });
+  }
+
+  _skeletonDamage(amount) {
+    const sk = this._skeleton;
+    if (!sk || sk._ko) return;
+    sk._hp = Math.max(0, sk._hp - amount);
+    this._updateSkeletonHpBar();
+    this._showDamageNumber(sk.x, sk.y, amount);
+    if (sk._hp <= 0) this._skeletonKO();
+  }
+
+  _updateSkeletonHpBar() {
+    const sk = this._skeleton;
+    if (!sk) return;
+    const pct   = Math.max(0, sk._hp / sk._maxHp);
+    const HP_W  = 80;
+    const color = pct > 0.5 ? 0xff4444 : pct > 0.25 ? 0xff8800 : 0xffcc00;
+    sk._hpFill.setSize(HP_W * pct, 4).setFillStyle(color, 0.95);
+  }
+
+  _skeletonKO() {
+    const sk = this._skeleton;
+    if (!sk || sk._ko) return;
+    sk._ko = true;
+    this.tweens.killTweensOf(sk);
+
+    // Release all chicken fighters
+    for (const [chicken] of [...this._skeletonFighters.entries()]) {
+      chicken._inCombat = false;
+      chicken._pinned   = false;
+      chicken._resume?.();
+    }
+    this._skeletonFighters.clear();
+
+    // Death animation, then tilt-fade
+    sk.play('skeleton-die');
+    sk.once('animationcomplete', () => {
+      this.tweens.add({
+        targets: sk, angle: 90, alpha: 0, duration: 700, ease: 'Quad.Out',
+        onComplete: () => {
+          if (sk._hpBg) { sk._hpBg.destroy(); sk._hpFill.destroy(); sk._nameLabel.destroy(); }
+          sk.destroy();
+          this._skeleton = null;
+        },
+      });
+    });
+
+    const def = this._txt(sk.x, sk.y - 28, '☠ DEFEATED!', {
+      fontSize: '14px', color: '#ffcc00', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5, 1).setDepth(30);
+    this.tweens.add({
+      targets: def, y: def.y - 50, alpha: 0,
+      duration: 2200, delay: 300, ease: 'Quad.Out',
+      onComplete: () => def.destroy(),
+    });
+  }
+
   spawnChickens() {
     // Home positions — grassy outdoor areas only
     const homes = [
@@ -459,6 +619,7 @@ class VillageScene extends Phaser.Scene {
 
       const wander = () => {
         if (chicken._pinned || chicken._fleeing || chicken._inCombat) return;
+        if (this._skeleton && !this._skeleton._ko) { this._initiateChickenVsSkeleton(chicken); return; }
         // Pick a walkable tile, preferring ones away from dogs
         const ct = gameToTile(chicken.x, chicken.y);
         const allPicks = [];
@@ -1704,6 +1865,116 @@ class VillageScene extends Phaser.Scene {
       }
     }
 
+    // ── Skeleton boss combat ───────────────────────────────────────────────────
+    if (this._skeleton) {
+      const sk = this._skeleton;
+
+      // Track HP bar and label with sprite
+      if (sk._hpBg) {
+        sk._hpBg.setPosition(sk.x, sk.y - 28);
+        sk._hpFill.setPosition(sk.x - 40, sk.y - 28);
+        sk._nameLabel.setPosition(sk.x, sk.y - 40);
+      }
+
+      if (!sk._ko) {
+        // Walk toward nearest non-KO chicken
+        const alive = this.chickens.filter(c => !c._ko);
+        if (alive.length > 0) {
+          alive.sort((a, b) => Math.hypot(sk.x - a.x, sk.y - a.y) - Math.hypot(sk.x - b.x, sk.y - b.y));
+          const nearest = alive[0];
+          const sdx = nearest.x - sk.x, sdy = nearest.y - sk.y;
+          const sdist = Math.hypot(sdx, sdy);
+          if (sdist > 40) {
+            const sstep = 32 * (delta / 1000);
+            sk.x += (sdx / sdist) * sstep;
+            sk.y += (sdy / sdist) * sstep;
+            const sdir = Math.abs(sdx) > Math.abs(sdy) ? (sdx > 0 ? 'right' : 'left') : (sdy > 0 ? 'down' : 'up');
+            if (!sk._attacking && sk.anims?.currentAnim?.key !== `skeleton-${sdir}`) sk.play(`skeleton-${sdir}`);
+          } else {
+            if (!sk._attacking && sk.anims?.currentAnim?.key !== 'skeleton-idle') sk.play('skeleton-idle');
+          }
+        } else {
+          // No alive chickens — idle and taunt once
+          if (!sk._attacking && sk.anims?.currentAnim?.key !== 'skeleton-idle') sk.play('skeleton-idle');
+          if (!sk._taunted) {
+            sk._taunted = true;
+            const taunt = this._txt(sk.x, sk.y - 44, '☠ VICTORIOUS!', {
+              fontSize: '11px', color: '#ffcc00', fontFamily: 'Arial', fontStyle: 'bold',
+              stroke: '#000000', strokeThickness: 3,
+            }).setOrigin(0.5, 1).setDepth(30);
+            this.tweens.add({
+              targets: taunt, y: taunt.y - 28, alpha: 0,
+              duration: 2000, delay: 600, ease: 'Quad.Out',
+              onComplete: () => taunt.destroy(),
+            });
+          }
+        }
+
+        // Skeleton attacks one nearby chicken on its own timer
+        if (now >= this._skeletonNextHitMs) {
+          let target = null, closestDist = Infinity;
+          for (const chicken of this.chickens) {
+            if (chicken._ko) continue;
+            const cd = Math.hypot(sk.x - chicken.x, sk.y - chicken.y);
+            if (cd < 50 && cd < closestDist) { target = chicken; closestDist = cd; }
+          }
+          if (target) {
+            const adx = target.x - sk.x, ady = target.y - sk.y;
+            const adir = Math.abs(adx) > Math.abs(ady) ? (adx > 0 ? 'right' : 'left') : (ady > 0 ? 'down' : 'up');
+            sk._attacking = true;
+            sk.play(`skeleton-slash-${adir}`);
+            sk.once('animationcomplete', () => { sk._attacking = false; });
+            this._chickenDamage(target, Phaser.Math.Between(48, 62));
+            this._skeletonNextHitMs = now + 950;
+          }
+        }
+      }
+
+      // Each chicken fighter approaches and attacks the skeleton
+      for (const [chicken, c] of [...this._skeletonFighters.entries()]) {
+        if (chicken._ko) {
+          this._skeletonFighters.delete(chicken);
+          chicken._inCombat = false;
+          continue;
+        }
+        if (sk._ko) {
+          this._skeletonFighters.delete(chicken);
+          chicken._inCombat = false;
+          chicken._pinned   = false;
+          chicken._resume?.();
+          continue;
+        }
+
+        const fdist = Math.hypot(chicken.x - sk.x, chicken.y - sk.y);
+
+        if (c.phase === 'approach') {
+          this.tweens.killTweensOf(chicken); // tweens run after update() and would override position writes
+          if (fdist <= 28) {
+            c.phase = 'fight';
+            c.nextHitMs = now + Phaser.Math.Between(200, 800);
+          } else {
+            const fdx = sk.x - chicken.x, fdy = sk.y - chicken.y;
+            const fstep = 65 * (delta / 1000);
+            const fd2 = Math.hypot(fdx, fdy);
+            if (fd2 > 0) {
+              chicken.x += (fdx / fd2) * fstep;
+              chicken.y += (fdy / fd2) * fstep;
+              chicken.setFlipX(fdx > 0);
+            }
+          }
+        } else if (c.phase === 'fight') {
+          if (fdist > 38) {
+            c.phase = 'approach'; // skeleton drifted away — re-close
+          } else if (now >= c.nextHitMs) {
+            chicken.setFlipX(sk.x > chicken.x);
+            this.tweens.add({ targets: chicken, y: chicken.y + 7, duration: 110, yoyo: true });
+            this._skeletonDamage(Phaser.Math.Between(22, 30));
+            if (!sk._ko) c.nextHitMs = now + Phaser.Math.Between(1000, 1500);
+          }
+        }
+      }
+    }
+
   }
 
   // Set bubble text with a fade-out after `delay` ms (persist=true = no fade).
@@ -1805,6 +2076,7 @@ class VillageScene extends Phaser.Scene {
   }
 
   _initChickenCombat(attacker, defender) {
+    if (this._skeleton && !this._skeleton._ko) return; // skeleton takes combat priority
     if (attacker === defender) return; // same chicken — click landed on hover target, re-selecting it
     if (attacker._ko || defender._ko || attacker._inCombat || defender._inCombat) return;
     attacker._inCombat = defender._inCombat = true;
