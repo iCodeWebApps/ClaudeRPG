@@ -151,6 +151,11 @@ class VillageScene extends Phaser.Scene {
   constructor() {
     super({ key: 'VillageScene' });
     this.villagers = {};
+    this._greetedPairs = new Set();
+  }
+
+  _txt(x, y, text, style) {
+    return this.add.text(x, y, text, { ...style, resolution: window.devicePixelRatio || 2 });
   }
 
   preload() {
@@ -187,6 +192,13 @@ class VillageScene extends Phaser.Scene {
     this.load.image('cattledog',       'assets/cattledog.png');
     this.load.image('cattledog_step',  'assets/cattledog_step.png');
     this.load.image('cattledog_sleep', 'assets/cattledog_sleep.png');
+
+    // Rain drop — 1×6 light-blue streak, generated without a file
+    const rg = this.make.graphics({ x: 0, y: 0, add: false });
+    rg.fillStyle(0xaaddff, 1);
+    rg.fillRect(0, 0, 1, 6);
+    rg.generateTexture('raindrop', 1, 6);
+    rg.destroy();
   }
 
   create() {
@@ -241,6 +253,7 @@ class VillageScene extends Phaser.Scene {
 
     this.buildMap();
     this.buildDayNight();
+    this.buildRain();
     this.spawnChickens();
     this.spawnDoodle();
     this.spawnCattleDog();
@@ -250,6 +263,14 @@ class VillageScene extends Phaser.Scene {
       delay: 60 * 60 * 1000,
       loop: true,
       callback: this.startRitual,
+      callbackScope: this,
+    });
+
+    // Villager proximity greetings — checked every 2 seconds
+    this.time.addEvent({
+      delay: 2000,
+      loop: true,
+      callback: this._checkGreetings,
       callbackScope: this,
     });
 
@@ -266,8 +287,12 @@ class VillageScene extends Phaser.Scene {
 
     this.connectWebSocket();
 
+    this._scheduleDanceRitual();
+
     // G key toggles navmesh grid overlay
     this.input.keyboard.on('keydown-G', () => this.toggleNavGrid());
+    this.input.keyboard.on('keydown-R', () => this._startRain());
+    this.input.keyboard.on('keydown-D', () => this.startDanceRitual());
     if (new URLSearchParams(window.location.search).has('grid')) {
       this.toggleNavGrid();
       history.replaceState(null, '', '/');
@@ -294,7 +319,7 @@ class VillageScene extends Phaser.Scene {
         g.lineStyle(1, 0xffffff, 0.25);
         g.strokeRect(x, y, tw, th);
 
-        const label = this.add.text(x + tw / 2, y + th / 2, `${c},${r}`, {
+        const label = this._txt(x + tw / 2, y + th / 2, `${c},${r}`, {
           fontSize: '5px', color: '#ffffff', fontFamily: 'monospace',
         }).setOrigin(0.5);
         container.add(label);
@@ -328,17 +353,56 @@ class VillageScene extends Phaser.Scene {
     this.dayOverlay.setFillStyle(color, alpha);
   }
 
+  // ── RAIN ─────────────────────────────────────────────────────────────────
+  buildRain() {
+    // Subtle blue-grey tint during rain (depth 14 — just above day overlay at 13)
+    this._rainOverlay = this.add.rectangle(400, 250, 800, 500, 0x112244, 0).setDepth(14);
+
+    // Particle emitter — streaks fall from above the screen at a slight angle
+    this._rainEmitter = this.add.particles(0, 0, 'raindrop', {
+      x: { min: -80, max: 860 },
+      y: { min: -10, max: -4 },
+      speedX: 38,
+      speedY: { min: 300, max: 460 },
+      lifespan: 1400,
+      quantity: 5,
+      frequency: 18,
+      alpha: { start: 0.55, end: 0.08 },
+      emitting: false,
+    }).setDepth(15);
+
+    this._scheduleRain();
+  }
+
+  _scheduleRain() {
+    const delay = Phaser.Math.Between(3 * 60 * 1000, 7 * 60 * 1000);
+    this.time.delayedCall(delay, () => this._startRain());
+  }
+
+  _startRain() {
+    this._rainEmitter.start();
+    this.tweens.add({ targets: this._rainOverlay, alpha: 0.12, duration: 1800, ease: 'Sine.In' });
+    const duration = Phaser.Math.Between(20 * 1000, 50 * 1000);
+    this.time.delayedCall(duration, () => this._stopRain());
+  }
+
+  _stopRain() {
+    this._rainEmitter.stop();
+    this.tweens.add({ targets: this._rainOverlay, alpha: 0, duration: 2500, ease: 'Sine.Out' });
+    this._scheduleRain();
+  }
+
   showDoodleStats(sx, sy, eggsEaten) {
     for (const t of this.histPanel._lines) t.destroy();
     this.histPanel._lines = [];
     const W = 160, PAD = 7, LH = 13;
     let cy = PAD;
-    const title = this.add.text(PAD, cy, '🐾 Doodle', {
+    const title = this._txt(PAD, cy, '🐾 Doodle', {
       fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0);
     this.histPanel.add(title); this.histPanel._lines.push(title);
     cy += LH + 2;
-    const stat = this.add.text(PAD, cy, `Eggs eaten: ${eggsEaten}`, {
+    const stat = this._txt(PAD, cy, `Eggs eaten: ${eggsEaten}`, {
       fontSize: '7px', color: '#ffdd88', fontFamily: 'monospace',
     }).setOrigin(0);
     this.histPanel.add(stat); this.histPanel._lines.push(stat);
@@ -362,7 +426,7 @@ class VillageScene extends Phaser.Scene {
     const W = 240, PAD = 7, LH = 13;
     let cy = PAD;
 
-    const title = this.add.text(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
+    const title = this._txt(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
       fontSize: '8px', color: '#88aaff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0);
     this.histPanel.add(title); this.histPanel._lines.push(title);
@@ -370,7 +434,7 @@ class VillageScene extends Phaser.Scene {
 
     const items = v.sprite.history.slice(-8).reverse();
     if (items.length === 0) {
-      const t = this.add.text(PAD, cy, '(no events yet)', {
+      const t = this._txt(PAD, cy, '(no events yet)', {
         fontSize: '7px', color: '#445566', fontFamily: 'monospace',
       }).setOrigin(0);
       this.histPanel.add(t); this.histPanel._lines.push(t);
@@ -378,7 +442,7 @@ class VillageScene extends Phaser.Scene {
     } else {
       for (const item of items) {
         const isTool = item.startsWith('→');
-        const t = this.add.text(PAD, cy, item, {
+        const t = this._txt(PAD, cy, item, {
           fontSize: '7px', color: isTool ? '#88ccff' : '#aaaaaa', fontFamily: 'monospace',
           wordWrap: { width: W - PAD * 2 },
         }).setOrigin(0);
@@ -418,6 +482,7 @@ class VillageScene extends Phaser.Scene {
         .setScale(0.042).setDepth(5);
 
       const wander = () => {
+        if (chicken._fleeing) return;
         // Pick a walkable tile, preferring ones away from dogs
         const ct = gameToTile(chicken.x, chicken.y);
         const allPicks = [];
@@ -452,6 +517,7 @@ class VillageScene extends Phaser.Scene {
 
         let i = 0;
         const step = () => {
+          if (chicken._fleeing) return;
           if (i >= waypoints.length) { peck(); return; }
           const wp = waypoints[i++];
           const dur = Math.max(80, Math.hypot(wp.x - chicken.x, wp.y - chicken.y) / 50 * 1000);
@@ -608,14 +674,14 @@ class VillageScene extends Phaser.Scene {
           egg.sprite.destroy();
           this.eggs.splice(idx, 1);
           doodle._eggsEaten = (doodle._eggsEaten || 0) + 1;
+          localStorage.setItem('clauderpg_eggsEaten', doodle._eggsEaten);
           fetch('/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eggsEaten: doodle._eggsEaten }) }).catch(() => {});
           this.time.delayedCall(300, wander);
         },
       });
     };
 
-    doodle._eggsEaten = 0;
-    fetch('/state').then(r => r.json()).then(s => { doodle._eggsEaten = s.eggsEaten || 0; }).catch(() => {});
+    doodle._eggsEaten = parseInt(localStorage.getItem('clauderpg_eggsEaten') || '0', 10);
     doodle.setInteractive();
     this.input.setDraggable(doodle);
 
@@ -778,6 +844,7 @@ class VillageScene extends Phaser.Scene {
   }
 
   startRitual() {
+    if (this.chickens.some(c => c._fleeing)) return;
     const CENTER        = { x: 195, y: 385 }; // Town Green
     const RADIUS        = 44;
     const STEPS_PER_ROT = 14;
@@ -842,6 +909,95 @@ class VillageScene extends Phaser.Scene {
     });
   }
 
+  // ── DANCE RITUAL ─────────────────────────────────────────────────────────
+  startDanceRitual() {
+    if (this.chickens.some(c => c._inRitual)) return;
+
+    const CENTER        = tileToGame(17, 17);
+    const RADIUS        = 38;
+    const STEPS_PER_ROT = 10;
+    const ROTATIONS     = 3;
+    const RISE_MS       = 95;
+    const LAND_MS       = 155;
+
+    for (const chicken of this.chickens) {
+      this.tweens.killTweensOf(chicken);
+      chicken._fleeing  = true;
+      chicken._inRitual = true;
+    }
+
+    let done = 0;
+
+    this.chickens.forEach((chicken, i) => {
+      const baseAngle = (i / this.chickens.length) * Math.PI * 2;
+      const sx = CENTER.x + Math.cos(baseAngle) * RADIUS;
+      const sy = CENTER.y + Math.sin(baseAngle) * RADIUS;
+
+      // Gather to circle
+      this.tweens.add({
+        targets: chicken, x: sx, y: sy,
+        duration: 1100, ease: 'Quad.Out',
+        onComplete: () => {
+              const totalSteps = ROTATIONS * STEPS_PER_ROT;
+              let step = 0;
+
+              const dance = () => {
+                step++;
+                if (step > totalSteps) {
+                  // Triple peck then scatter
+                  this.tweens.add({
+                    targets: chicken, y: chicken.y + 5, duration: 90,
+                    yoyo: true, repeat: 3,
+                    onComplete: () => {
+                      chicken._fleeing  = false;
+                      chicken._inRitual = false;
+                      chicken._wander();
+                      done++;
+                      if (done === this.chickens.length) this._scheduleDanceRitual();
+                    },
+                  });
+                  return;
+                }
+                const angle = baseAngle + (step / STEPS_PER_ROT) * Math.PI * 2;
+                const tx = CENTER.x + Math.cos(angle) * RADIUS;
+                const ty = CENTER.y + Math.sin(angle) * RADIUS;
+                chicken.setFlipX(tx > chicken.x);
+                // Hop: rise to midpoint then bounce-land at orbit position
+                this.tweens.add({
+                  targets: chicken, x: tx, y: ty - 9,
+                  duration: RISE_MS, ease: 'Quad.Out',
+                  onComplete: () => {
+                    this.tweens.add({
+                      targets: chicken, y: ty,
+                      duration: LAND_MS, ease: 'Bounce.Out',
+                      onComplete: dance,
+                    });
+                  },
+                });
+              };
+
+              dance();
+        },
+      });
+    });
+  }
+
+  _interruptRitual() {
+    for (const chicken of this.chickens) {
+      if (!chicken._inRitual) continue;
+      this.tweens.killTweensOf(chicken);
+      chicken._fleeing  = false;
+      chicken._inRitual = false;
+      chicken._wander();
+    }
+    this._scheduleDanceRitual();
+  }
+
+  _scheduleDanceRitual() {
+    const delay = Phaser.Math.Between(20 * 60 * 1000, 45 * 60 * 1000);
+    this.time.delayedCall(delay, () => this.startDanceRitual());
+  }
+
   pickWalkableTile(x, y, radius) {
     const ct = gameToTile(x, y);
     const picks = [];
@@ -871,8 +1027,9 @@ class VillageScene extends Phaser.Scene {
 
   _stopFishing(sprite) {
     sprite._fishing = false;
-    if (sprite._fishTween) { sprite._fishTween.remove(); sprite._fishTween = null; }
-    if (sprite._fishTimer) { sprite._fishTimer.remove(); sprite._fishTimer = null; }
+    if (sprite._fishTween)   { sprite._fishTween.remove();   sprite._fishTween   = null; }
+    if (sprite._fishTimer)   { sprite._fishTimer.remove();   sprite._fishTimer   = null; }
+    if (sprite._fishTimeout) { sprite._fishTimeout.remove(); sprite._fishTimeout = null; }
     if (sprite._fishingSlot !== undefined) {
       this.fishingSlots.delete(sprite._fishingSlot);
       sprite._fishingSlot = undefined;
@@ -908,17 +1065,26 @@ class VillageScene extends Phaser.Scene {
     v.bubble.setText('...🎣...');
 
     if (v.sprite._fishTween) v.sprite._fishTween.remove();
+    const snapY = v.sprite._fishSnapY ?? v.sprite.y;
+    v.sprite.y = snapY;
     v.sprite._fishTween = this.tweens.add({
-      targets: v.sprite, y: v.sprite.y + 2,
+      targets: v.sprite, y: snapY + 2,
       duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.InOut',
     });
+
+    // Idle timeout — stop fishing after 4 minutes and wander away
+    if (!v.sprite._fishTimeout) {
+      v.sprite._fishTimeout = this.time.delayedCall(4 * 60 * 1000, () => {
+        if (v.sprite._fishing) { this._stopFishing(v.sprite); v.sprite._wander?.(); }
+      });
+    }
 
     v.sprite._fishTimer = this.time.delayedCall(
       Phaser.Math.Between(2500, 6000),
       () => {
         if (!v.sprite._fishing) return;
         if (v.sprite._fishTween) { v.sprite._fishTween.remove(); v.sprite._fishTween = null; }
-        v.sprite.y = Math.round(v.sprite.y);
+        v.sprite.y = snapY;
         if (Math.random() < 0.35) this._fishBite(v);
         else this.startFishing(v);
       }
@@ -1058,11 +1224,11 @@ class VillageScene extends Phaser.Scene {
     sprite.looking  = false;
 
     const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
-    const label  = this.add.text(pos.x, pos.y - 40, name, {
+    const label  = this._txt(pos.x, pos.y - 40, name, {
       fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
       backgroundColor: '#00000099', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 1).setDepth(15);
-    const bubble = this.add.text(pos.x, pos.y + 30, 'wandering...', {
+    const bubble = this._txt(pos.x, pos.y + 30, 'wandering...', {
       fontSize: '8px', color: '#aaffaa', fontFamily: 'monospace',
       backgroundColor: '#00000088', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 0).setDepth(15);
@@ -1133,9 +1299,10 @@ class VillageScene extends Phaser.Scene {
         sprite.body.reset(sx, sy);
         label.setPosition(sx, sy - 40);
         bubble.setPosition(sx, sy + 30);
-        sprite.targetX = sx;
-        sprite.targetY = sy;
-        sprite._fishing     = true;
+        sprite.targetX    = sx;
+        sprite.targetY    = sy;
+        sprite._fishing   = true;
+        sprite._fishSnapY = sy;
         sprite._preFishText = sprite._bubbleRef?.text ?? null;
         sprite.setFlipX(false);
         this.startFishing(this.villagers[agentId]);
@@ -1145,6 +1312,51 @@ class VillageScene extends Phaser.Scene {
     });
 
     return this.villagers[agentId];
+  }
+
+  // ── GREETINGS ─────────────────────────────────────────────────────────────
+  _checkGreetings() {
+    const idle = Object.entries(this.villagers).filter(
+      ([, v]) => v.sprite.arrived && !v.sprite._fishing && !v.sprite._greeting && !v.sprite.looking
+    );
+    for (let i = 0; i < idle.length; i++) {
+      for (let j = i + 1; j < idle.length; j++) {
+        const [idA, vA] = idle[i];
+        const [idB, vB] = idle[j];
+        const dx = vA.sprite.x - vB.sprite.x;
+        const dy = vA.sprite.y - vB.sprite.y;
+        if (dx * dx + dy * dy > 65 * 65) continue;
+        const pairKey = [idA, idB].sort().join('|');
+        if (this._greetedPairs.has(pairKey)) continue;
+        this._greetedPairs.add(pairKey);
+        this.time.delayedCall(60000, () => this._greetedPairs.delete(pairKey));
+        this._greet(vA, vB);
+      }
+    }
+  }
+
+  _greet(vA, vB) {
+    const LINES = ['Hey!', 'Hi!', 'Sup?', 'Hello!', 'Howdy!', 'Hey there!', 'Nice day!', 'Greetings!', 'Oh hi!', 'Heya!'];
+    const pick  = () => LINES[Phaser.Math.Between(0, LINES.length - 1)];
+    [[vA, vB], [vB, vA]].forEach(([v, other]) => {
+      const prevText = v.bubble.text;
+      const idle     = `${v.cfg.key}-idle`;
+      v.sprite._greeting = true;
+      v.sprite.looking   = true;
+      const lookAnim = other.sprite.x >= v.sprite.x
+        ? `${v.cfg.key}-look-right`
+        : `${v.cfg.key}-look-left`;
+      v.sprite.play(lookAnim);
+      v.sprite.once('animationcomplete', () => {
+        v.sprite.looking = false;
+        if (v.sprite.arrived) v.sprite.play(idle);
+      });
+      v.bubble.setText(pick());
+      this.time.delayedCall(3000, () => {
+        v.sprite._greeting = false;
+        if (!v.sprite._fishing) v.bubble.setText(prevText);
+      });
+    });
   }
 
   handleEvent(event) {
@@ -1181,9 +1393,10 @@ class VillageScene extends Phaser.Scene {
     v.sprite._idleWander   = false;
     v.sprite._idleWanderMs = 0;
 
-    v.sprite.arrived  = false;
-    v.sprite.looking  = false;
-    v.sprite.idleMs   = 0;
+    v.sprite.arrived   = false;
+    v.sprite.looking   = false;
+    v.sprite._greeting = false;
+    v.sprite.idleMs    = 0;
 
     v.bubble.setText(event.tool || map.label);
 
@@ -1224,9 +1437,10 @@ class VillageScene extends Phaser.Scene {
             v.sprite.body.reset(sx, sy);
             v.label.setPosition(sx, sy - 40);
             v.bubble.setPosition(sx, sy + 30);
-            v.sprite.targetX = sx;
-            v.sprite.targetY = sy;
-            v.sprite._fishing     = true;
+            v.sprite.targetX    = sx;
+            v.sprite.targetY    = sy;
+            v.sprite._fishing   = true;
+            v.sprite._fishSnapY = sy;
             v.sprite._preFishText = v.sprite._bubbleRef?.text ?? null;
             v.sprite.setFlipX(false);
             this.startFishing(v);
@@ -1326,8 +1540,19 @@ class VillageScene extends Phaser.Scene {
 
     // Chicken avoidance — flee from any dog within range
     const FLEE_R = 45;
+    const RITUAL_INTERRUPT_R = 90;
     for (const chicken of this.chickens) {
-      if (chicken._fleeing) continue;
+      if (chicken._fleeing && !chicken._inRitual) continue;
+      if (chicken._inRitual) {
+        for (const dog of this.dogs) {
+          const dx = chicken.x - dog.x, dy = chicken.y - dog.y;
+          if (dx * dx + dy * dy < RITUAL_INTERRUPT_R * RITUAL_INTERRUPT_R) {
+            this._interruptRitual();
+            break;
+          }
+        }
+        continue;
+      }
       for (const dog of this.dogs) {
         const dx = chicken.x - dog.x;
         const dy = chicken.y - dog.y;
