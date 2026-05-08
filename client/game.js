@@ -1939,6 +1939,10 @@ class VillageScene extends Phaser.Scene {
     if (this._selEntity) this._duckHonk(this._selEntity);
   }
 
+  _escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
   _renderPane() {
     const pane     = document.getElementById('action-pane');
     const titleEl  = document.getElementById('ap-title');
@@ -1963,7 +1967,7 @@ class VillageScene extends Phaser.Scene {
         ? '<span style="color:#445566">(no events yet)</span>'
         : items.map(item => {
             const col = item.startsWith('→') ? '#88ccff' : '#999';
-            return `<div style="color:${col};word-break:break-word">${item}</div>`;
+            return `<div style="color:${col};word-break:break-word">${this._escHtml(item)}</div>`;
           }).join('');
     } else if (type === 'doodle') {
       bodyHTML = `<span style="color:#ffdd88">Eggs eaten: ${obj._eggsEaten || 0} 🥚</span>`;

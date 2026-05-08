@@ -90,8 +90,9 @@ app.post('/save-asset', (req, res) => {
 server.listen(PORT, async () => {
   console.log(`ClaudeRPG running at http://localhost:${PORT}`);
   startWatcher(broadcast);
-  const { default: open } = await import('open');
-  open(`http://localhost:${PORT}`);
+  const url = `http://localhost:${PORT}`;
+  const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
+  require('child_process').exec(cmd);
 });
 
 process.on('SIGINT', () => process.exit(0));
