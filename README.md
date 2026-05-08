@@ -39,19 +39,47 @@ Opens at **http://localhost:3131**. Start any Claude Code session and your villa
 
 ## What's in the village
 
+### Agents
 - Villagers walk to new spots on every tool call, via A* pathfinding
-- Speech bubbles show Claude's actual response text
-- Click a villager to see its last 8 tool calls
+- Speech bubbles show Claude's actual response text and tool names
+- Context window meter under each villager's name (green → yellow → red)
 - Hover over a building roof to fade it and see who's inside
-- Drag villagers, dogs, and the duck to reposition them
+- Villagers greet each other when they pass by
+- Villagers idle-wander and occasionally fish at the lower-right pond
+
+### Action pane
+- Click any entity to select it — an action pane opens in the lower-right corner
+- Click anywhere on the map to move the selected entity there (A* pathfinding)
+- Right-click to deselect
+- The pane shows agent history, entity stats, and context-aware actions
+- Resume button restores auto-behavior after a manual move
+
+### Chicken combat 🐔
+- 7 chickens roam the village with individual health bars (hidden at full HP)
+- Select a chicken, hover a rival to target it (red glow), then click to attack
+- The attacker pathfinds to melee range before engaging
+- Turns alternate — attacker strikes, defender retaliates
+- KO'd chickens fall over and gradually heal back to full over 60 seconds
+- Floating damage numbers
+
+### Duck 🦆
+- Follows your agents around the village (prefers character2)
+- Click it to select — use the action pane to Honk or Grow it
+- Grows in 50% increments up to 4× its normal size; next click resets
+- Honk bubble and size persist across sessions via localStorage
+
+### Music player
+- 🔇 / 🔊 toggle in the HUD with a station dropdown
+- Five stations: **EDM** (SomaFM The Trip) · **Jazz** (SomaFM Secret Agent) · **Hip-Hop** (SomaFM Fluid) · **Medieval** (Radio Rivendell) · **Reggae** (SomaFM Reggae)
+- Volume slider; station and volume preferences saved across sessions
+
+### World
 - Night/day cycle based on your system clock
 - Occasional rain showers with atmospheric blue overlay
-- Villagers greet each other when they're nearby
-- 7 chickens that wander, peck, and occasionally lay eggs
-- Chickens hold a secret dance ritual every so often
-- Two dogs roam the village — the cattledog herds chickens to the lower-left corner
-- A duck that follows your agents around (prefers character2). Click it to honk.
-- Drag a villager to the lower-right pond to fish
+- Chickens hold a secret dance ritual every 20–45 minutes
+- Two dogs roam freely — the cattledog and the doodle
+- Doodle eats eggs laid by chickens (egg count tracked per session)
+- ⧉ pop-out button opens a borderless fullscreen window
 
 ## Debug keys
 
@@ -66,6 +94,7 @@ Opens at **http://localhost:3131**. Start any Claude Code session and your villa
 | | |
 |---|---|
 | Phase 1 ✅ | Claude → Village. Sessions become villagers. |
+| Phase 1.5 ✅ | Village interactions. Combat, music, action pane. |
 | Phase 2 | Village → Claude. Send tasks via MCP queue. |
 | Phase 3 | Multiplayer. Share a village with friends. |
 
@@ -73,6 +102,8 @@ Opens at **http://localhost:3131**. Start any Claude Code session and your villa
 
 - [LPC sprites](https://lpc.opengameart.org/) — CC-BY-SA 3.0
 - [Phaser.js](https://phaser.io/)
+- [SomaFM](https://somafm.com/) — commercial-free internet radio
+- [Radio Rivendell](https://www.radiorivendell.com/) — 24/7 fantasy music
 - chokidar
 
 MIT
