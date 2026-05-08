@@ -1225,12 +1225,14 @@ class VillageScene extends Phaser.Scene {
 
     const name = agentId.startsWith('agent-') ? agentId.slice(0, 10) : agentId.slice(0, 8);
     const label  = this._txt(pos.x, pos.y - 40, name, {
-      fontSize: '8px', color: '#ffe082', fontFamily: 'monospace',
-      backgroundColor: '#00000099', padding: { x: 3, y: 1 },
+      fontSize: '10px', color: '#ffe082', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 3,
+      backgroundColor: '#000000bb', padding: { x: 4, y: 2 },
     }).setOrigin(0.5, 1).setDepth(15);
     const bubble = this._txt(pos.x, pos.y + 30, 'wandering...', {
-      fontSize: '8px', color: '#aaffaa', fontFamily: 'monospace',
-      backgroundColor: '#00000088', padding: { x: 3, y: 1 },
+      fontSize: '10px', color: '#aaffaa', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 3,
+      backgroundColor: '#000000bb', padding: { x: 4, y: 2 },
     }).setOrigin(0.5, 0).setDepth(15);
 
     sprite._bubbleRef = bubble;
@@ -1636,7 +1638,7 @@ new Phaser.Game({
   width: 800,
   height: 500,
   backgroundColor: '#3a6a28',
-  pixelArt: true,
+  antialias: true,
   physics: {
     default: 'arcade',
     arcade: { gravity: { y: 0 }, debug: false },
