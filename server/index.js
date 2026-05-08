@@ -24,6 +24,8 @@ const clients = new Set();
 
 // Last known tool_use per agent — survives browser reloads
 const villagerState = {};
+// Last known context usage per agent
+const contextState  = {};
 
 const AGENT_TTL = 60 * 60 * 1000; // 1 hour
 
@@ -46,13 +48,18 @@ wss.on('connection', (ws) => {
     if (state.timestamp < cutoff) continue;
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(state));
   }
+  for (const state of Object.values(contextState)) {
+    if (state.timestamp < cutoff) continue;
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(state));
+  }
 
   ws.on('close', () => clients.delete(ws));
 });
 
 function broadcast(event) {
   // Track last position per agent so new connections can restore state
-  if (event.type === 'tool_use') villagerState[event.agent] = event;
+  if (event.type === 'tool_use')      villagerState[event.agent] = event;
+  if (event.type === 'context_update') contextState[event.agent] = event;
 
   const payload = JSON.stringify(event);
   for (const client of clients) {

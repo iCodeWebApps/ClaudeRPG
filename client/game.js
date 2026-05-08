@@ -279,15 +279,52 @@ class VillageScene extends Phaser.Scene {
       callbackScope: this,
     });
 
-    // ── History panel (shared, shown on villager click) ───────────────
-    this.histPanel = this.add.container(0, 0).setDepth(30).setVisible(false);
-    this.histPanel._bg    = this.add.rectangle(0, 0, 240, 40, 0x0d0d1a, 0.93).setOrigin(0).setStrokeStyle(1, 0x334466);
-    this.histPanel._lines = [];
-    this.histPanel.add(this.histPanel._bg);
+    // ── Selection state ───────────────────────────────────────────────
+    this._selEntity      = null;
+    this._selEntityType  = null;
+    this._selEntityExtra = {};
+    this._moveMode       = false;
+    this._hovTarget      = null;
+    this._activeCombats  = new Map(); // attacker → combat state object
+    window._rp = this;
 
-    // Click anywhere outside a villager closes the panel
+    // Hover targeting — red glow on rival when a chicken is selected
+    this.input.on('pointermove', (ptr, hits) => {
+      if (!this._selEntity || this._selEntityType !== 'chicken') {
+        if (this._hovTarget) { this._removeHovGlow(this._hovTarget); this._hovTarget = null; }
+        return;
+      }
+      const target = hits.find(o => this.chickens.includes(o) && o !== this._selEntity && !o._ko) || null;
+      if (target !== this._hovTarget) {
+        if (this._hovTarget) this._removeHovGlow(this._hovTarget);
+        this._hovTarget = target;
+        if (this._hovTarget) this._applyHovGlow(this._hovTarget);
+      }
+    });
+
+    // Left-click: combat if hovering a rival, otherwise move selected entity
     this.input.on('pointerdown', (ptr, hits) => {
-      if (this.histPanel.visible && hits.length === 0) this.histPanel.setVisible(false);
+      if (ptr.rightButtonDown()) return;
+      // Chicken combat — hover target takes priority over map click
+      if (this._selEntityType === 'chicken' && this._hovTarget) {
+        const attacker = this._selEntity;
+        const defender = this._hovTarget;
+        this._clearSelection();
+        this._initChickenCombat(attacker, defender);
+        return;
+      }
+      if (hits.length > 0 || !this._selEntity || !this._moveMode) return;
+      const tile = gameToTile(ptr.x, ptr.y);
+      const safe = GRID[tile.r]?.[tile.c] ? tile : nearestWalkable(tile.c, tile.r);
+      const dest = tileToGame(safe.c, safe.r);
+      this._selEntity._walkTo(dest.x, dest.y);
+      this._spawnClickPing(dest.x, dest.y);
+      this._clearSelection();
+    });
+
+    // Right-click anywhere → deselect
+    this.input.on('pointerdown', (ptr) => {
+      if (ptr.rightButtonDown()) this._clearSelection();
     });
 
     this.connectWebSocket();
@@ -397,72 +434,6 @@ class VillageScene extends Phaser.Scene {
     this._scheduleRain();
   }
 
-  showDoodleStats(sx, sy, eggsEaten) {
-    for (const t of this.histPanel._lines) t.destroy();
-    this.histPanel._lines = [];
-    const W = 160, PAD = 7, LH = 13;
-    let cy = PAD;
-    const title = this._txt(PAD, cy, '🐾 Doodle', {
-      fontSize: '11px', color: '#88aaff', fontFamily: 'Arial', fontStyle: 'bold',
-    }).setOrigin(0);
-    this.histPanel.add(title); this.histPanel._lines.push(title);
-    cy += LH + 2;
-    const stat = this._txt(PAD, cy, `Eggs eaten: ${eggsEaten}`, {
-      fontSize: '11px', color: '#ffdd88', fontFamily: 'Arial',
-    }).setOrigin(0);
-    this.histPanel.add(stat); this.histPanel._lines.push(stat);
-    cy += LH;
-    this.histPanel._bg.setSize(W, cy + PAD);
-    const px = Phaser.Math.Clamp(sx - W / 2, 4, 800 - W - 4);
-    const py = Phaser.Math.Clamp(sy - cy - PAD - 40, 4, 500 - cy - PAD * 2);
-    this.histPanel.setPosition(px, py).setVisible(true);
-    this.histPanel._activeAgent = 'doodle';
-  }
-
-  // ── HISTORY PANEL ────────────────────────────────────────────────────────
-  showHistory(agentId, sx, sy) {
-    const v = this.villagers[agentId];
-    if (!v) return;
-
-    // Clear previous lines
-    for (const t of this.histPanel._lines) t.destroy();
-    this.histPanel._lines = [];
-
-    const W = 240, PAD = 7, LH = 13;
-    let cy = PAD;
-
-    const title = this._txt(PAD, cy, `◆ ${agentId.slice(0,14)}`, {
-      fontSize: '11px', color: '#88aaff', fontFamily: 'Arial', fontStyle: 'bold',
-    }).setOrigin(0);
-    this.histPanel.add(title); this.histPanel._lines.push(title);
-    cy += LH + 3;
-
-    const items = v.sprite.history.slice(-8).reverse();
-    if (items.length === 0) {
-      const t = this._txt(PAD, cy, '(no events yet)', {
-        fontSize: '10px', color: '#445566', fontFamily: 'Arial',
-      }).setOrigin(0);
-      this.histPanel.add(t); this.histPanel._lines.push(t);
-      cy += LH;
-    } else {
-      for (const item of items) {
-        const isTool = item.startsWith('→');
-        const t = this._txt(PAD, cy, item, {
-          fontSize: '10px', color: isTool ? '#88ccff' : '#aaaaaa', fontFamily: 'Arial',
-          wordWrap: { width: W - PAD * 2 },
-        }).setOrigin(0);
-        this.histPanel.add(t); this.histPanel._lines.push(t);
-        cy += Math.max(LH, Math.ceil(item.length / 30) * LH) + 1;
-      }
-    }
-
-    this.histPanel._bg.setSize(W, cy + PAD);
-
-    const px = Phaser.Math.Clamp(sx - W / 2, 4, 800 - W - 4);
-    const py = Phaser.Math.Clamp(sy - cy - PAD - 50, 4, 500 - cy - PAD * 2);
-    this.histPanel.setPosition(px, py).setVisible(true);
-    this.histPanel._activeAgent = agentId;
-  }
 
   spawnChickens() {
     // Home positions — grassy outdoor areas only
@@ -487,7 +458,7 @@ class VillageScene extends Phaser.Scene {
         .setScale(0.042).setDepth(5);
 
       const wander = () => {
-        if (chicken._fleeing) return;
+        if (chicken._pinned || chicken._fleeing || chicken._inCombat) return;
         // Pick a walkable tile, preferring ones away from dogs
         const ct = gameToTile(chicken.x, chicken.y);
         const allPicks = [];
@@ -502,10 +473,16 @@ class VillageScene extends Phaser.Scene {
 
         const safePicks = allPicks.filter(t => {
           const g = tileToGame(t.c, t.r);
-          return !(this.dogs || []).some(d => {
+          const nearDog = (this.dogs || []).some(d => {
             const ddx = g.x - d.x, ddy = g.y - d.y;
             return ddx*ddx + ddy*ddy < 80*80;
           });
+          const nearChicken = this.chickens.some(other => {
+            if (other === chicken || other._inCombat) return false;
+            const ddx = g.x - other.x, ddy = g.y - other.y;
+            return ddx*ddx + ddy*ddy < 22*22; // keep at least 1 tile apart
+          });
+          return !nearDog && !nearChicken;
         });
         const picks = safePicks.length > 0 ? safePicks : allPicks;
         const t = picks[Math.floor(Math.random() * picks.length)];
@@ -522,7 +499,7 @@ class VillageScene extends Phaser.Scene {
 
         let i = 0;
         const step = () => {
-          if (chicken._fleeing) return;
+          if (chicken._pinned || chicken._fleeing || chicken._inCombat) return;
           if (i >= waypoints.length) { peck(); return; }
           const wp = waypoints[i++];
           const dur = Math.max(80, Math.hypot(wp.x - chicken.x, wp.y - chicken.y) / 50 * 1000);
@@ -533,6 +510,7 @@ class VillageScene extends Phaser.Scene {
       };
 
       const peck = () => {
+        if (chicken._pinned || chicken._inCombat) return;
         this.tweens.add({
           targets: chicken,
           y: chicken.y + 5,
@@ -540,34 +518,66 @@ class VillageScene extends Phaser.Scene {
           yoyo: true,
           repeat: Phaser.Math.Between(0, 2),
           onComplete: () => {
+            if (chicken._pinned || chicken._inCombat) return;
             if (Math.random() < 0.04) this.layEgg(chicken.x, chicken.y);
             this.time.delayedCall(Phaser.Math.Between(300, 1800), wander);
           },
         });
       };
 
-      chicken._fleeing = false;
-      chicken._wander  = wander;
+      chicken._fleeing  = false;
+      chicken._pinned   = false;
+      chicken._inCombat = false;
+      chicken._ko       = false;
+      chicken._koTimer  = null;
+      chicken._hp       = 100;
+      chicken._maxHp    = 100;
+      chicken._wander   = wander;
       this.chickens.push(chicken);
 
-      // ── Drag to relocate ───────────────────────────────────────────
+      // ── Health bar ─────────────────────────────────────────────────
+      const HP_W = 24, HP_H = 3;
+      chicken._hpBg   = this.add.rectangle(home.x, home.y - 14, HP_W, HP_H, 0x222222, 0.85).setDepth(8).setVisible(false);
+      chicken._hpFill = this.add.rectangle(home.x - HP_W / 2, home.y - 14, HP_W, HP_H, 0x44dd66, 0.95)
+        .setOrigin(0, 0.5).setDepth(9).setVisible(false);
+
+      chicken._resume = () => { chicken._pinned = false; wander(); };
+      chicken._walkToken = null; // cancellation token — changes on each new walk
+      chicken._walkTo = (tx, ty) => {
+        this.tweens.killTweensOf(chicken);
+        // Keep _pinned = true throughout the walk to block wander.
+        // The step uses a token (not _pinned) for its own cancellation.
+        chicken._pinned = true;
+        const myToken = {}; chicken._walkToken = myToken;
+        const ct  = gameToTile(chicken.x, chicken.y);
+        const et  = gameToTile(tx, ty);
+        const stW = GRID[ct.r]?.[ct.c] ? ct : nearestWalkable(ct.c, ct.r);
+        const etW = GRID[et.r]?.[et.c] ? et : nearestWalkable(et.c, et.r);
+        const path = aStar(stW.c, stW.r, etW.c, etW.r);
+        const wps  = path && path.length > 1
+          ? path.slice(1).map(w => tileToGame(w.c, w.r))
+          : [tileToGame(etW.c, etW.r)];
+        let i = 0;
+        const step = () => {
+          // Stop if this walk was superseded by a newer one, or combat started
+          if (chicken._walkToken !== myToken || chicken._inCombat) return;
+          if (i >= wps.length) { this._renderPane(); return; }
+          const wp  = wps[i++];
+          const dur = Math.max(80, Math.hypot(wp.x - chicken.x, wp.y - chicken.y) / 50 * 1000);
+          chicken.setFlipX(wp.x > chicken.x);
+          this.tweens.add({ targets: chicken, x: wp.x, y: wp.y, duration: dur, ease: 'Linear', onComplete: step });
+        };
+        step();
+      };
+
       chicken.setInteractive();
-      this.input.setDraggable(chicken);
-
-      chicken.on('dragstart', () => {
-        this.tweens.killTweensOf(chicken); // stop current wander
-        chicken.setDepth(25);
-      });
-
-      chicken.on('drag', (pointer, dragX, dragY) => {
-        chicken.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
-      });
-
-      chicken.on('dragend', () => {
-        chicken.setDepth(8);
-        home.x = chicken.x;   // update home so wander stays in new area
-        home.y = chicken.y;
-        this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
+      chicken.on('pointerdown', () => {
+        // If this chicken is the combat hover target, don't re-select it —
+        // the global pointerdown handler will initiate combat using the
+        // current _selEntity as the attacker. Re-selecting here would
+        // overwrite _selEntity to this chicken, making attacker === defender.
+        if (this._hovTarget === chicken) return;
+        this._selectEntity('chicken', chicken);
       });
 
       // Stagger start so they don't all sync up
@@ -609,6 +619,7 @@ class VillageScene extends Phaser.Scene {
     };
 
     const wander = () => {
+      if (doodle._pinned) return;
       // Head toward a nearby egg if one is close enough
       const nearEgg = this.eggs?.find(e => {
         const dx = doodle.x - e.x, dy = doodle.y - e.y;
@@ -687,29 +698,23 @@ class VillageScene extends Phaser.Scene {
     };
 
     doodle._eggsEaten = parseInt(localStorage.getItem('clauderpg_eggsEaten') || '0', 10);
-    doodle.setInteractive();
-    this.input.setDraggable(doodle);
-
-    doodle.on('pointerup', () => {
-      this.showDoodleStats(doodle.x, doodle.y, doodle._eggsEaten);
-    });
-
-    doodle.on('dragstart', () => {
+    doodle._pinned = false;
+    doodle._resume = () => {
       wakeUp();
+      doodle._pinned = false;
+      wander();
+    };
+    doodle._walkTo = (tx, ty) => {
+      if (doodle._walkTimer)  { doodle._walkTimer.remove();  doodle._walkTimer  = null; }
+      if (doodle._sleepTimer) { doodle._sleepTimer.remove(); doodle._sleepTimer = null; }
+      if (doodle._sleepTween) { doodle._sleepTween.remove(); doodle._sleepTween = null; }
       this.tweens.killTweensOf(doodle);
-      doodle.setDepth(25);
-    });
-
-    doodle.on('drag', (pointer, dragX, dragY) => {
-      doodle.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
-    });
-
-    doodle.on('dragend', () => {
-      doodle.setDepth(5);
-      home.x = doodle.x;
-      home.y = doodle.y;
-      this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
-    });
+      doodle.setTexture('doodle').setScale(0.075);
+      doodle._pinned = false;
+      walkToPath(tx, ty, () => { doodle._pinned = true; this._renderPane(); });
+    };
+    doodle.setInteractive();
+    doodle.on('pointerdown', () => this._selectEntity('doodle', doodle));
 
     this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
   }
@@ -747,36 +752,8 @@ class VillageScene extends Phaser.Scene {
       step();
     };
 
-    const HERD_TARGET = { x: 55, y: 430 }; // lower-left herding zone
-
     const wander = () => {
-      const candidates = (this.chickens || []).filter(c => !c._fleeing);
-
-      if (candidates.length > 0) {
-        // Find the chicken furthest from the herding target
-        const target = candidates.reduce((far, c) => {
-          const d1 = (c.x - HERD_TARGET.x) ** 2 + (c.y - HERD_TARGET.y) ** 2;
-          const d2 = (far.x - HERD_TARGET.x) ** 2 + (far.y - HERD_TARGET.y) ** 2;
-          return d1 > d2 ? c : far;
-        });
-
-        const distToGoal = Math.hypot(target.x - HERD_TARGET.x, target.y - HERD_TARGET.y);
-        if (distToGoal > 90) {
-          // Approach from behind: position dog on the far side of the chicken from the target
-          const dx = target.x - HERD_TARGET.x;
-          const dy = target.y - HERD_TARGET.y;
-          const len = Math.hypot(dx, dy);
-          const ax = Phaser.Math.Clamp(target.x + (dx / len) * 65, 12, 788);
-          const ay = Phaser.Math.Clamp(target.y + (dy / len) * 65, 12, 488);
-          const at = gameToTile(ax, ay);
-          const safeT = GRID[at.r]?.[at.c] ? at : nearestWalkable(at.c, at.r);
-          const safe = tileToGame(safeT.c, safeT.r);
-          walkToPath(safe.x, safe.y, sniff);
-          return;
-        }
-      }
-
-      // All chickens corralled or none present — take a normal wander break
+      if (dog._pinned) return;
       const dest = this.pickWalkableTile(dog.x, dog.y, 8);
       if (!dest) { this.time.delayedCall(400, wander); return; }
       walkToPath(dest.x, dest.y, sniff);
@@ -825,25 +802,23 @@ class VillageScene extends Phaser.Scene {
       });
     };
 
-    dog.setInteractive();
-    this.input.setDraggable(dog);
-
-    dog.on('dragstart', () => {
+    dog._pinned = false;
+    dog._resume = () => {
       wakeUp();
+      dog._pinned = false;
+      wander();
+    };
+    dog._walkTo = (tx, ty) => {
+      if (dog._walkTimer)  { dog._walkTimer.remove();  dog._walkTimer  = null; }
+      if (dog._sleepTimer) { dog._sleepTimer.remove(); dog._sleepTimer = null; }
+      if (dog._sleepTween) { dog._sleepTween.remove(); dog._sleepTween = null; }
       this.tweens.killTweensOf(dog);
-      dog.setDepth(25);
-    });
-
-    dog.on('drag', (pointer, dragX, dragY) => {
-      dog.setPosition(Phaser.Math.Clamp(dragX, 0, GAME_W), Phaser.Math.Clamp(dragY, 0, GAME_H));
-    });
-
-    dog.on('dragend', () => {
-      dog.setDepth(5);
-      home.x = dog.x;
-      home.y = dog.y;
-      this.time.delayedCall(Phaser.Math.Between(200, 800), wander);
-    });
+      dog.setTexture('cattledog').setScale(0.045);
+      dog._pinned = false;
+      walkToPath(tx, ty, () => { dog._pinned = true; this._renderPane(); });
+    };
+    dog.setInteractive();
+    dog.on('pointerdown', () => this._selectEntity('cattledog', dog));
 
     this.time.delayedCall(Phaser.Math.Between(0, 1500), wander);
   }
@@ -855,6 +830,8 @@ class VillageScene extends Phaser.Scene {
     const FOLLOW_R = 70;   // px — chase threshold
 
     const duck = this.add.image(320, 340, 'duck').setScale(SCALE).setDepth(5);
+    duck._sizeStep = parseInt(localStorage.getItem('clauderpg_duck_size') || '0', 10);
+    if (duck._sizeStep) duck.setScale(SCALE * (1 + 0.5 * duck._sizeStep));
     if (this.renderer.gl) {
       this.renderer.pipelines.addPostPipeline('OutlinePostFX', OutlinePostFX);
       duck.setPostPipeline('OutlinePostFX');
@@ -893,6 +870,7 @@ class VillageScene extends Phaser.Scene {
     };
 
     const idle = () => {
+      if (duck._pinned) return;
       this.tweens.add({
         targets: duck, y: duck.y + 3, duration: 480,
         yoyo: true, repeat: 1,
@@ -901,7 +879,7 @@ class VillageScene extends Phaser.Scene {
     };
 
     const follow = () => {
-      if (duck._dragging) return;
+      if (duck._pinned) return;
 
       // Drop target if it disconnected
       if (duck._targetId && !this.villagers[duck._targetId]) duck._targetId = null;
@@ -943,45 +921,25 @@ class VillageScene extends Phaser.Scene {
     };
 
     duck._targetId = null;
-    duck._dragging = false;
+    duck._pinned   = false;
+    duck._resume   = () => { duck._pinned = false; follow(); };
+    duck._walkTo   = (tx, ty) => {
+      duck._pinned = false;
+      walkToPath(tx, ty, () => { duck._pinned = true; this._renderPane(); });
+    };
 
-    // ── Drag to relocate ─────────────────────────────────────────────────
     duck.setInteractive();
-    this.input.setDraggable(duck);
-    let _downX = 0, _downY = 0;
-    duck.on('pointerdown', ptr => { _downX = ptr.x; _downY = ptr.y; });
-    duck.on('dragstart', () => {
-      duck._dragging = true;
-      if (duck._walkTimer) { duck._walkTimer.remove(); duck._walkTimer = null; }
-      this.tweens.killTweensOf(duck);
-      duck.setTexture('duck').setDepth(25);
-    });
-    duck.on('drag', (_, gx, gy) => duck.setPosition(gx, gy));
-    duck.on('dragend', (ptr) => {
-      duck.setDepth(5);
-      duck._dragging = false;
-      const t    = gameToTile(duck.x, duck.y);
-      const safe = GRID[t.r]?.[t.c] ? t : nearestWalkable(t.c, t.r);
-      const g    = tileToGame(safe.c, safe.r);
-      duck.setPosition(g.x, g.y);
-
-      // Tap vs drag — honk if barely moved, then resume either way
-      if (Math.hypot(ptr.x - _downX, ptr.y - _downY) < 8) {
-        this._duckHonk(duck);
-      }
-      this.time.delayedCall(300, follow);
-    });
-
-
+    duck.on('pointerdown', () => this._selectEntity('duck', duck));
 
     this.time.delayedCall(800, follow);
   }
 
   _duckHonk(duck) {
     if (duck._honkText) { duck._honkText.destroy(); duck._honkText = null; }
-    duck._honkText = this._txt(duck.x, duck.y - 18, 'Honk!', {
-      fontSize: '11px', color: '#ffffff', fontFamily: 'Arial',
-      stroke: '#000000', strokeThickness: 3,
+    const honkScale = 1 + 0.5 * (duck._sizeStep || 0);
+    duck._honkText = this._txt(duck.x, duck.y - 18 * honkScale, 'Honk!', {
+      fontSize: `${Math.round(11 * honkScale)}px`, color: '#ffffff', fontFamily: 'Arial',
+      stroke: '#000000', strokeThickness: Math.round(3 * honkScale),
       backgroundColor: '#00000055', padding: { x: 4, y: 2 },
     }).setOrigin(0.5, 1).setDepth(20);
     this.tweens.add({
@@ -1000,6 +958,7 @@ class VillageScene extends Phaser.Scene {
 
     // Stop normal behaviour — _fleeing blocks dog-avoidance logic too
     for (const chicken of this.chickens) {
+      if (chicken._inCombat) continue;
       this.tweens.killTweensOf(chicken);
       chicken._fleeing = true;
     }
@@ -1068,6 +1027,7 @@ class VillageScene extends Phaser.Scene {
     const LAND_MS       = 155;
 
     for (const chicken of this.chickens) {
+      if (chicken._inCombat) continue;
       this.tweens.killTweensOf(chicken);
       chicken._fleeing  = true;
       chicken._inRitual = true;
@@ -1184,7 +1144,9 @@ class VillageScene extends Phaser.Scene {
     if (sprite._bubbleRef) {
       const restore = sprite._preFishText
         ?? (sprite.history.length > 0 ? sprite.history[sprite.history.length - 1] : 'wandering...');
-      sprite._bubbleRef.setText(restore);
+      const v = Object.values(this.villagers).find(vi => vi.sprite === sprite);
+      if (v) this._setBubble(v, restore);
+      else sprite._bubbleRef.setText(restore);
     }
     sprite._preFishText = null;
     sprite.y = Math.round(sprite.y);
@@ -1193,7 +1155,7 @@ class VillageScene extends Phaser.Scene {
   startFishing(v) {
     if (!v || !v.sprite._fishing) return;
     const key = v.cfg.key;
-    v.bubble.setText('fishing...');
+    this._setBubble(v, 'fishing...', { persist: true });
     if (FISHING_CHARS.has(key)) {
       v.sprite.play(`${key}-fish-cast`);
       v.sprite.once('animationcomplete', () => {
@@ -1209,7 +1171,7 @@ class VillageScene extends Phaser.Scene {
     if (!v.sprite._fishing) return;
     const key = v.cfg.key;
     if (FISHING_CHARS.has(key)) v.sprite.play(`${key}-fish-wait`);
-    v.bubble.setText('...🎣...');
+    this._setBubble(v, '...🎣...', { persist: true });
 
     if (v.sprite._fishTween) v.sprite._fishTween.remove();
     const snapY = v.sprite._fishSnapY ?? v.sprite.y;
@@ -1250,7 +1212,7 @@ class VillageScene extends Phaser.Scene {
   _fishBite(v) {
     if (!v.sprite._fishing) return;
     const key = v.cfg.key;
-    v.bubble.setText('Got one! 🐟');
+    this._setBubble(v, 'Got one! 🐟', { delay: 2500 });
     if (FISHING_CHARS.has(key)) {
       v.sprite.play(`${key}-fish-bite`);
       v.sprite.once('animationcomplete', () => {
@@ -1375,7 +1337,6 @@ class VillageScene extends Phaser.Scene {
     sprite.path       = null;
     sprite.pathIdx    = 0;
     sprite.history        = [];
-    sprite._wasDragged    = false;
     sprite._fishing       = false;
     sprite._fishTween     = null;
     sprite._fishTimer     = null;
@@ -1402,82 +1363,48 @@ class VillageScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(15);
 
     sprite._bubbleRef = bubble;
-    this.villagers[agentId] = { sprite, label, bubble, cfg };
 
-    // ── Click to show history ─────────────────────────────────────────
+    // Context window meter — hidden until first context_update arrives
+    const CTX_W   = 44;
+    const meterBg = this.add.rectangle(pos.x, pos.y - 35, CTX_W, 3, 0x222222, 0.75)
+      .setDepth(15).setVisible(false);
+    const meterFill = this.add.rectangle(pos.x - CTX_W / 2, pos.y - 35, 0, 3, 0x44dd66, 0.9)
+      .setOrigin(0, 0.5).setDepth(15).setVisible(false);
+
+    this.villagers[agentId] = { sprite, label, bubble, meterBg, meterFill, cfg };
+
+    sprite._pinned   = false;
+    sprite._onArrive = null;
+    sprite._resume   = () => { sprite._pinned = false; };
+    sprite._walkTo   = (tx, ty) => {
+      this._stopFishing(sprite);
+      sprite._idleWander = false;
+      const st  = gameToTile(sprite.x, sprite.y);
+      const et  = gameToTile(tx, ty);
+      const stW = GRID[st.r]?.[st.c] ? st : nearestWalkable(st.c, st.r);
+      const etW = GRID[et.r]?.[et.c] ? et : nearestWalkable(et.c, et.r);
+      const path = aStar(stW.c, stW.r, etW.c, etW.r);
+      if (path && path.length > 1) {
+        sprite.path    = path.slice(1).map(t => tileToGame(t.c, t.r));
+        sprite.path.push({ x: tx, y: ty });
+        sprite.pathIdx = 0;
+        sprite.targetX = sprite.path[0].x;
+        sprite.targetY = sprite.path[0].y;
+      } else {
+        sprite.path    = null;
+        sprite.targetX = tx;
+        sprite.targetY = ty;
+      }
+      sprite.arrived   = false;
+      sprite.looking   = false;
+      sprite._greeting = false;
+      sprite.idleMs    = 0;
+      sprite._pinned   = true;
+      sprite._onArrive = () => this._renderPane();
+    };
+
     sprite.setInteractive();
-    sprite.on('pointerdown', () => { sprite._wasDragged = false; });
-    sprite.on('drag',        () => { sprite._wasDragged = true;  });
-    sprite.on('pointerup',   () => {
-      if (sprite._wasDragged) return;
-      if (this.histPanel.visible && this.histPanel._activeAgent === agentId) {
-        this.histPanel.setVisible(false);
-      } else {
-        this.showHistory(agentId, sprite.x, sprite.y);
-      }
-    });
-
-    // ── Drag to reposition ────────────────────────────────────────────
-    this.input.setDraggable(sprite);
-
-    sprite.on('dragstart', () => {
-      this._stopFishing(sprite);          // cancel fishing before drag starts
-      sprite.body.setEnable(false);
-      this.tweens.killTweensOf(sprite);
-      sprite.setDepth(25);
-    });
-
-    sprite.on('drag', (pointer, dragX, dragY) => {
-      const cx = Phaser.Math.Clamp(dragX, 0, GAME_W);
-      const cy = Phaser.Math.Clamp(dragY, 0, GAME_H);
-      sprite.setPosition(cx, cy);
-      label.setPosition(cx, cy - 40);
-      bubble.setPosition(cx, cy + 30);
-    });
-
-    sprite.on('dragend', () => {
-      // Snap to nearest walkable tile if dropped in a blocked area
-      const tile = gameToTile(sprite.x, sprite.y);
-      if (!GRID[tile.r]?.[tile.c]) {
-        const safe = nearestWalkable(tile.c, tile.r);
-        const pos  = tileToGame(safe.c, safe.r);
-        sprite.setPosition(pos.x, pos.y);
-      }
-
-      sprite.body.setEnable(true);
-      sprite.body.reset(sprite.x, sprite.y);
-      sprite.setDepth(5);
-      sprite.targetX = sprite.x;
-      sprite.targetY = sprite.y;
-      sprite.arrived = true;
-      sprite.path    = null;
-      sprite.looking = false;
-      sprite.idleMs  = 0;
-
-      // Start fishing if dropped near the pond — all villagers can fish
-      const inZone  = sprite.x >= FISHING_ZONE.x && sprite.x <= FISHING_ZONE.x + FISHING_ZONE.w
-                   && sprite.y >= FISHING_ZONE.y && sprite.y <= FISHING_ZONE.y + FISHING_ZONE.h;
-      if (inZone) {
-        this._stopFishing(sprite);
-        const offset = FISHING_OFFSETS.find(o => !this.fishingSlots.has(o)) ?? 0;
-        this.fishingSlots.add(offset);
-        sprite._fishingSlot = offset;
-        const sx = FISHING_SNAP.x + offset, sy = FISHING_SNAP.y;
-        sprite.setPosition(sx, sy);
-        sprite.body.reset(sx, sy);
-        label.setPosition(sx, sy - 40);
-        bubble.setPosition(sx, sy + 30);
-        sprite.targetX    = sx;
-        sprite.targetY    = sy;
-        sprite._fishing   = true;
-        sprite._fishSnapY = sy;
-        sprite._preFishText = sprite._bubbleRef?.text ?? null;
-        sprite.setFlipX(false);
-        this.startFishing(this.villagers[agentId]);
-      } else {
-        this._stopFishing(sprite);
-      }
-    });
+    sprite.on('pointerdown', () => this._selectEntity('villager', agentId, sprite));
 
     return this.villagers[agentId];
   }
@@ -1519,10 +1446,10 @@ class VillageScene extends Phaser.Scene {
         v.sprite.looking = false;
         if (v.sprite.arrived) v.sprite.play(idle);
       });
-      v.bubble.setText(pick());
+      this._setBubble(v, pick(), { delay: 3000 });
       this.time.delayedCall(3000, () => {
         v.sprite._greeting = false;
-        if (!v.sprite._fishing) v.bubble.setText(prevText);
+        if (!v.sprite._fishing) this._setBubble(v, prevText);
       });
     });
   }
@@ -1566,7 +1493,7 @@ class VillageScene extends Phaser.Scene {
     v.sprite._greeting = false;
     v.sprite.idleMs    = 0;
 
-    v.bubble.setText(event.tool || map.label);
+    this._setBubble(v, event.tool || map.label);
 
     // Log to history
     v.sprite.history.push(`→ ${event.tool}`);
@@ -1589,6 +1516,8 @@ class VillageScene extends Phaser.Scene {
         if (v.sprite._fishing) {
           v.label.setPosition(v.sprite.x, v.sprite.y - 40);
           v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
+          v.meterBg.setPosition(v.sprite.x, v.sprite.y - 35);
+          v.meterFill.setPosition(v.sprite.x - 22, v.sprite.y - 35);
           continue;
         }
 
@@ -1605,6 +1534,8 @@ class VillageScene extends Phaser.Scene {
             v.sprite.body.reset(sx, sy);
             v.label.setPosition(sx, sy - 40);
             v.bubble.setPosition(sx, sy + 30);
+            v.meterBg.setPosition(sx, sy - 35);
+            v.meterFill.setPosition(sx - 22, sy - 35);
             v.sprite.targetX    = sx;
             v.sprite.targetY    = sy;
             v.sprite._fishing   = true;
@@ -1635,7 +1566,7 @@ class VillageScene extends Phaser.Scene {
         }
 
         // Idle wander — occasional slow amble to a nearby tile
-        if (!v.sprite.looking && !v.sprite._fishing) {
+        if (!v.sprite._pinned && !v.sprite.looking && !v.sprite._fishing) {
           v.sprite._idleWanderMs += delta;
           if (v.sprite._idleWanderMs >= v.sprite._idleWanderWait) {
             v.sprite._idleWanderMs  = 0;
@@ -1697,6 +1628,7 @@ class VillageScene extends Phaser.Scene {
             v.sprite.path        = null;
             v.sprite.setVelocity(0, 0);
             if (v.sprite.anims.currentAnim?.key !== idle) v.sprite.play(idle);
+            if (v.sprite._onArrive) { v.sprite._onArrive(); v.sprite._onArrive = null; }
           }
         }
       }
@@ -1704,56 +1636,95 @@ class VillageScene extends Phaser.Scene {
       // Labels always track the actual sprite position (physics may have shifted it)
       v.label.setPosition(v.sprite.x, v.sprite.y - 40);
       v.bubble.setPosition(v.sprite.x, v.sprite.y + 30);
+      v.meterBg.setPosition(v.sprite.x, v.sprite.y - 35);
+      v.meterFill.setPosition(v.sprite.x - 22, v.sprite.y - 35);
     }
 
-    // Chicken avoidance — flee from any dog within range
-    const FLEE_R = 45;
-    const RITUAL_INTERRUPT_R = 90;
-    for (const chicken of this.chickens) {
-      if (chicken._fleeing && !chicken._inRitual) continue;
-      if (chicken._inRitual) {
-        for (const dog of this.dogs) {
-          const dx = chicken.x - dog.x, dy = chicken.y - dog.y;
-          if (dx * dx + dy * dy < RITUAL_INTERRUPT_R * RITUAL_INTERRUPT_R) {
-            this._interruptRitual();
-            break;
+    // ── Active chicken combat (state machine, no closures/timers) ────────────
+    const now   = this.time.now;
+    const COMBAT_SPEED = 65; // px/s approach speed
+    for (const c of [...this._activeCombats.values()]) {
+      const { attacker: a, defender: d } = c;
+      if (a._ko || d._ko) { this._endActiveCombat(c); continue; }
+
+      if (c.phase === 'approach') {
+        this.tweens.killTweensOf(a);
+        const dist = Math.hypot(a.x - d.x, a.y - d.y);
+        if (dist <= 20) {
+          c.phase = 'fight';
+          c.nextHitMs = now + 400;
+          // Do NOT reset defenderTurn here — preserve whose turn it is.
+          // It is initialised false in _initChickenCombat and alternates
+          // naturally through the fight; resetting it on every re-engage
+          // would permanently skip the defender's turn.
+        } else {
+          // Target: stop ~20 px short of defender so they don't fully overlap
+          const _dd = Math.hypot(d.x - a.x, d.y - a.y);
+          const _stop = Math.max(0, _dd - 20) / (_dd || 1);
+          let tx = a.x + (d.x - a.x) * _stop + (d.x - a.x) * (20 / (_dd || 1));
+          let ty = a.y + (d.y - a.y) * _stop + (d.y - a.y) * (20 / (_dd || 1));
+          if (c.wpIdx < c.wps.length) {
+            const wp = c.wps[c.wpIdx];
+            if (Math.hypot(wp.x - a.x, wp.y - a.y) < 5) c.wpIdx++;
+            else { tx = wp.x; ty = wp.y; }
+          }
+          const dx   = tx - a.x, dy = ty - a.y;
+          const step = COMBAT_SPEED * (delta / 1000);
+          const d2   = Math.hypot(dx, dy);
+          if (d2 > 0) {
+            a.x += (dx / d2) * step;
+            a.y += (dy / d2) * step;
+            a.setFlipX(dx > 0);
           }
         }
-        continue;
-      }
-      for (const dog of this.dogs) {
-        const dx = chicken.x - dog.x;
-        const dy = chicken.y - dog.y;
-        if (dx * dx + dy * dy < FLEE_R * FLEE_R) {
-          chicken._fleeing = true;
-          this.tweens.killTweensOf(chicken);
-          const angle = Math.atan2(dy, dx);
-          const rx = Phaser.Math.Clamp(chicken.x + Math.cos(angle) * 90, 12, 788);
-          const ry = Phaser.Math.Clamp(chicken.y + Math.sin(angle) * 90, 12, 488);
-          const ft = gameToTile(rx, ry);
-          const safeFt = GRID[ft.r]?.[ft.c] ? ft : nearestWalkable(ft.c, ft.r);
-          const ct2 = gameToTile(chicken.x, chicken.y);
-          const stW2 = GRID[ct2.r]?.[ct2.c] ? ct2 : nearestWalkable(ct2.c, ct2.r);
-          const fleePath = aStar(stW2.c, stW2.r, safeFt.c, safeFt.r);
-          const fleeWps = fleePath && fleePath.length > 1
-            ? fleePath.slice(1).map(w => tileToGame(w.c, w.r))
-            : [tileToGame(safeFt.c, safeFt.r)];
-          let fi = 0;
-          const fleeStep = () => {
-            if (fi >= fleeWps.length) {
-              this.time.delayedCall(400, () => { chicken._fleeing = false; chicken._wander(); });
-              return;
-            }
-            const wp = fleeWps[fi++];
-            const dur = Math.max(60, Math.hypot(wp.x - chicken.x, wp.y - chicken.y) / 120 * 1000);
-            chicken.setFlipX(wp.x > chicken.x);
-            this.tweens.add({ targets: chicken, x: wp.x, y: wp.y, duration: dur, ease: 'Quad.Out', onComplete: fleeStep });
-          };
-          fleeStep();
-          break;
+      } else if (c.phase === 'fight' && now >= c.nextHitMs) {
+        if (!c.defenderTurn) {
+          a.setFlipX(d.x > a.x);
+          this.tweens.add({ targets: a, y: a.y + 7, duration: 110, yoyo: true });
+          this._chickenDamage(d, Phaser.Math.Between(15, 25));
+          if (d._ko) { this._endActiveCombat(c); continue; }
+          c.defenderTurn = true;
+          c.nextHitMs    = now + 550;
+        } else {
+          d.setFlipX(a.x > d.x);
+          this.tweens.add({ targets: d, y: d.y + 7, duration: 110, yoyo: true });
+          this._chickenDamage(a, Phaser.Math.Between(10, 20));
+          if (a._ko) { this._endActiveCombat(c); continue; }
+          c.defenderTurn = false;
+          c.nextHitMs    = now + 900;
         }
       }
     }
+
+    // Chicken HP bar positions
+    for (const c of this.chickens) {
+      if (c._hpBg) {
+        c._hpBg.setPosition(c.x, c.y - 14);
+        c._hpFill.setPosition(c.x - 12, c.y - 14);
+      }
+    }
+
+  }
+
+  // Set bubble text with a fade-out after `delay` ms (persist=true = no fade).
+  _setBubble(v, text, { persist = false, delay = 5000 } = {}) {
+    if (v.bubble._fadeTimer) { v.bubble._fadeTimer.remove(); v.bubble._fadeTimer = null; }
+    this.tweens.killTweensOf(v.bubble);
+    v.bubble.setAlpha(1).setText(text);
+    if (!persist) {
+      v.bubble._fadeTimer = this.time.delayedCall(delay, () => {
+        this.tweens.add({ targets: v.bubble, alpha: 0.25, duration: 1500, ease: 'Quad.In' });
+      });
+    }
+  }
+
+  // Update the per-villager context window fill bar.
+  _updateContextMeter(v, pct) {
+    const CTX_W = 44;
+    const color = pct < 0.5 ? 0x44dd66 : pct < 0.8 ? 0xffcc00 : 0xff4444;
+    v.meterBg.setVisible(true);
+    v.meterFill.setVisible(pct > 0);
+    v.meterFill.setSize(CTX_W * pct, 3).setFillStyle(color, 0.9);
   }
 
   // Real agent text replaces the bubble — always wins over the tool placeholder.
@@ -1763,12 +1734,265 @@ class VillageScene extends Phaser.Scene {
     if (!v) return;
     const clean   = ev.text.replace(/\s+/g, ' ').trim();
     const snippet = clean.length > 72 ? '...' + clean.slice(-69) : clean;
-    v.bubble.setText(snippet);
+    this._setBubble(v, snippet, { delay: 8000 });
 
     // Log to history
     const histLine = clean.length > 45 ? '"...' + clean.slice(-42) + '"' : `"${clean}"`;
     v.sprite.history.push(histLine);
     if (v.sprite.history.length > 20) v.sprite.history.shift();
+  }
+
+  // ── ACTION PANE ──────────────────────────────────────────────────────────
+  _selectEntity(type, idOrObj, gameObj) {
+    let obj, extra = {};
+    if (type === 'villager') {
+      extra = { agentId: idOrObj };
+      obj   = gameObj || this.villagers[idOrObj]?.sprite;
+    } else {
+      obj = idOrObj;
+    }
+    if (!obj) return;
+    if (this._selEntity && this._selEntity !== obj) this._removeSelGlow(this._selEntity);
+    this._selEntity      = obj;
+    this._selEntityType  = type;
+    this._selEntityExtra = extra;
+    this._moveMode       = true;
+    this._applySelGlow(obj);
+    this._renderPane();
+  }
+
+  _clearSelection() {
+    if (this._selEntity) this._removeSelGlow(this._selEntity);
+    if (this._hovTarget) { this._removeHovGlow(this._hovTarget); this._hovTarget = null; }
+    this._selEntity      = null;
+    this._selEntityType  = null;
+    this._selEntityExtra = {};
+    this._moveMode       = false;
+    document.getElementById('action-pane').classList.remove('open');
+  }
+
+  _spawnClickPing(x, y) {
+    const g = this.add.graphics().setDepth(20);
+    const proxy = { r: 4, a: 1 };
+    this.tweens.add({
+      targets: proxy,
+      r: 20,
+      a: 0,
+      duration: 450,
+      ease: 'Quad.Out',
+      onUpdate: () => {
+        g.clear();
+        g.lineStyle(2, 0xffcc44, proxy.a);
+        g.strokeCircle(x, y, proxy.r);
+        g.fillStyle(0xffcc44, proxy.a * 0.35);
+        g.fillCircle(x, y, proxy.r * 0.35);
+      },
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  // ── COMBAT ───────────────────────────────────────────────────────────────
+  _applyHovGlow(obj) {
+    if (!this.renderer.gl || !obj.postFX) return;
+    if (obj._hovGlow) return;
+    obj._hovGlow = obj.postFX.addGlow(0xff3333, 5, 0, false);
+  }
+
+  _removeHovGlow(obj) {
+    if (!obj?._hovGlow) return;
+    obj.postFX?.remove(obj._hovGlow);
+    obj._hovGlow = null;
+  }
+
+  _initChickenCombat(attacker, defender) {
+    if (attacker === defender) return; // same chicken — click landed on hover target, re-selecting it
+    if (attacker._ko || defender._ko || attacker._inCombat || defender._inCombat) return;
+    attacker._inCombat = defender._inCombat = true;
+    attacker._pinned   = defender._pinned   = true;
+    attacker._walkToken = null; // cancel any in-progress player-directed walk
+    this.tweens.killTweensOf(attacker);
+    this.tweens.killTweensOf(defender);
+
+    // Compute A* path to defender's tile once — update() steps through it each frame
+    const ct  = gameToTile(attacker.x, attacker.y);
+    const stW = GRID[ct.r]?.[ct.c] ? ct : nearestWalkable(ct.c, ct.r);
+    const etT = gameToTile(defender.x, defender.y);
+    const etW = GRID[etT.r]?.[etT.c] ? etT : nearestWalkable(etT.c, etT.r);
+    const path = aStar(stW.c, stW.r, etW.c, etW.r);
+    const wps  = path && path.length > 1
+      ? path.slice(1).map(t => tileToGame(t.c, t.r))
+      : [];
+
+    this._activeCombats.set(attacker, {
+      attacker, defender,
+      wps, wpIdx: 0,
+      phase: 'approach',
+      defenderTurn: false,
+      nextHitMs: 0,
+    });
+  }
+
+  _endActiveCombat(combat) {
+    this._activeCombats.delete(combat.attacker);
+    combat.attacker._inCombat = combat.defender._inCombat = false;
+    if (!combat.attacker._ko) { combat.attacker._pinned = false; combat.attacker._resume?.(); }
+    if (!combat.defender._ko) { combat.defender._pinned = false; combat.defender._resume?.(); }
+  }
+
+  // A*-pathfinding walk to a specific tile.
+  _chickenDamage(chicken, amount) {
+    if (chicken._ko) return;
+    chicken._hp = Math.max(0, chicken._hp - amount);
+    this._updateChickenHpBar(chicken);
+    this._showDamageNumber(chicken.x, chicken.y, amount);
+    if (chicken._hp <= 0) this._chickenKO(chicken);
+  }
+
+  _updateChickenHpBar(chicken) {
+    const pct  = Math.max(0, chicken._hp / chicken._maxHp);
+    const full = pct >= 1 && !chicken._ko;
+    chicken._hpBg.setVisible(!full);
+    chicken._hpFill.setVisible(!full);
+    if (!full) {
+      const color = chicken._ko ? 0x666666 : pct > 0.5 ? 0x44dd66 : pct > 0.25 ? 0xffcc00 : 0xff4444;
+      chicken._hpFill.setSize(24 * pct, 3).setFillStyle(color, 0.95);
+    }
+  }
+
+  _chickenKO(chicken) {
+    chicken._ko     = true;
+    chicken._pinned = true;
+    this.tweens.killTweensOf(chicken);
+    chicken.setAngle(90).setTint(0x999999);
+    this._updateChickenHpBar(chicken);
+
+    const ko = this._txt(chicken.x, chicken.y - 18, 'KO!', {
+      fontSize: '11px', color: '#ff4444', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setDepth(25);
+    this.tweens.add({
+      targets: ko, alpha: 0, y: ko.y - 18, duration: 1200, delay: 1200,
+      onComplete: () => ko.destroy(),
+    });
+
+    // Gradual heal: 30 ticks × 2 s = 60 s back to full
+    const TICK_MS   = 2000;
+    const hpPerTick = chicken._maxHp / 30;
+    const tick = () => {
+      chicken._hp = Math.min(chicken._maxHp, Math.round(chicken._hp + hpPerTick));
+      this._updateChickenHpBar(chicken);
+      if (chicken._hp >= chicken._maxHp) {
+        chicken._ko     = false;
+        chicken._pinned = false;
+        chicken.setAngle(0).clearTint();
+        this._updateChickenHpBar(chicken);
+        chicken._resume?.();
+      } else {
+        chicken._koTimer = this.time.delayedCall(TICK_MS, tick);
+      }
+    };
+    chicken._koTimer = this.time.delayedCall(TICK_MS, tick);
+  }
+
+  _showDamageNumber(x, y, amount) {
+    const txt = this._txt(x, y - 8, `-${amount}`, {
+      fontSize: '12px', color: '#ff4444', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setDepth(25);
+    this.tweens.add({
+      targets: txt, y: y - 36, alpha: 0,
+      duration: 850, ease: 'Quad.Out',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  _applySelGlow(obj) {
+    if (!this.renderer.gl || !obj.postFX) return;
+    if (obj._selGlow) return;
+    obj._selGlow = obj.postFX.addGlow(0xffcc44, 6, 0, false);
+  }
+
+  _removeSelGlow(obj) {
+    if (!obj?._selGlow) return;
+    obj.postFX?.remove(obj._selGlow);
+    obj._selGlow = null;
+  }
+
+  _resumeSelected() {
+    if (!this._selEntity) return;
+    this._selEntity._resume?.();
+    this._renderPane();
+  }
+
+  _growDuck() {
+    const duck = this._selEntity;
+    if (!duck) return;
+    const SCALE = 0.033;
+    duck._sizeStep = duck._sizeStep >= 6 ? 0 : duck._sizeStep + 1;
+    localStorage.setItem('clauderpg_duck_size', duck._sizeStep);
+    const s = SCALE * (1 + 0.5 * duck._sizeStep);
+    this.tweens.add({ targets: duck, scaleX: s, scaleY: s, duration: 180, ease: 'Back.Out' });
+    this._renderPane();
+  }
+
+  _honkDuck() {
+    if (this._selEntity) this._duckHonk(this._selEntity);
+  }
+
+  _renderPane() {
+    const pane     = document.getElementById('action-pane');
+    const titleEl  = document.getElementById('ap-title');
+    const bodyEl   = document.getElementById('ap-body');
+    const actionsEl = document.getElementById('ap-actions');
+    if (!this._selEntity) { pane.classList.remove('open'); return; }
+    pane.classList.add('open');
+
+    const type  = this._selEntityType;
+    const obj   = this._selEntity;
+    const extra = this._selEntityExtra || {};
+
+    const ICONS = { villager: '◆', duck: '🦆', doodle: '🐾', cattledog: '🐕', chicken: '🐔' };
+    const label = type === 'villager' ? (extra.agentId || 'agent') : type;
+    titleEl.textContent = `${ICONS[type] || '●'} ${label}`;
+
+    let bodyHTML = '';
+    if (type === 'villager') {
+      const v     = this.villagers[extra.agentId];
+      const items = v?.sprite.history.slice(-8).reverse() || [];
+      bodyHTML = items.length === 0
+        ? '<span style="color:#445566">(no events yet)</span>'
+        : items.map(item => {
+            const col = item.startsWith('→') ? '#88ccff' : '#999';
+            return `<div style="color:${col};word-break:break-word">${item}</div>`;
+          }).join('');
+    } else if (type === 'doodle') {
+      bodyHTML = `<span style="color:#ffdd88">Eggs eaten: ${obj._eggsEaten || 0} 🥚</span>`;
+    } else if (type === 'duck') {
+      const step = obj._sizeStep || 0;
+      const size = step === 0 ? '1x' : `${(1 + 0.5 * step).toFixed(1)}x`;
+      bodyHTML = `<span style="color:#aaffaa">Size: ${size}${step > 0 ? ` (step ${step}/6)` : ''}</span>`;
+    } else if (type === 'chicken') {
+      const pct  = Math.round((obj._hp / obj._maxHp) * 100);
+      const col  = obj._ko ? '#888' : pct > 50 ? '#44dd66' : pct > 25 ? '#ffcc00' : '#ff4444';
+      bodyHTML   = `<div style="color:${col}">HP: ${obj._hp} / ${obj._maxHp}</div>`;
+      if (obj._ko) bodyHTML += '<div style="color:#ff4444;font-style:italic;margin-top:2px">KO\'d — recovering…</div>';
+      else         bodyHTML += '<div style="color:#ff8844;margin-top:3px;font-size:10px">⚔ Hover a rival to target</div>';
+    } else {
+      bodyHTML = '<span style="color:#445566">—</span>';
+    }
+    bodyEl.innerHTML = bodyHTML;
+
+    const btns = [];
+    if (obj._pinned) {
+      btns.push(`<button class="ap-btn primary" onclick="window._rp._resumeSelected()">▶ Resume</button>`);
+    }
+    if (type === 'duck') {
+      const step = obj._sizeStep || 0;
+      const label = step >= 6 ? '↩ Reset size' : '⬆ Grow';
+      btns.push(`<button class="ap-btn" onclick="window._rp._growDuck()">${label}</button>`);
+      btns.push(`<button class="ap-btn" onclick="window._rp._honkDuck()">📢 Honk</button>`);
+    }
+    actionsEl.innerHTML = btns.join('');
   }
 
   // ── WEBSOCKET ────────────────────────────────────────────────────────────
@@ -1787,6 +2011,10 @@ class VillageScene extends Phaser.Scene {
         const ev = JSON.parse(msg.data);
         if (ev.type === 'tool_use')       this.handleEvent(ev);
         if (ev.type === 'assistant_text') this.handleText(ev);
+        if (ev.type === 'context_update') {
+          const v = this.villagers[ev.agent];
+          if (v) this._updateContextMeter(v, ev.pct);
+        }
       } catch {}
     };
 
@@ -1843,4 +2071,5 @@ new Phaser.Game({
   scene: VillageScene,
   parent: document.body,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, zoom: 2 },
+  input: { mouse: { preventDefaultDown: false } },
 });

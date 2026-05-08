@@ -51,6 +51,22 @@ function processLine(raw, agentId, broadcast) {
       });
     }
   }
+
+  // Context window usage — input_tokens + both cache buckets = full context sent
+  const usage = event.message?.usage;
+  if (usage) {
+    const used = (usage.input_tokens || 0)
+               + (usage.cache_read_input_tokens || 0)
+               + (usage.cache_creation_input_tokens || 0);
+    broadcast({
+      type:      'context_update',
+      agent:     agentId,
+      sessionId: event.sessionId,
+      used,
+      pct:       Math.min(1, used / 1_000_000),
+      timestamp: Date.now(),
+    });
+  }
 }
 
 // Read only the bytes added since last read, parse new lines.
