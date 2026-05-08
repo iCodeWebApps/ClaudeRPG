@@ -41,13 +41,25 @@ Opens at **http://localhost:3131**. Start any Claude Code session and your villa
 
 - Villagers walk to new spots on every tool call, via A* pathfinding
 - Speech bubbles show Claude's actual response text
-- Hover over a building roof to fade it and see who's inside
-- Drag villagers, dogs, and chickens to reposition them
 - Click a villager to see its last 8 tool calls
+- Hover over a building roof to fade it and see who's inside
+- Drag villagers, dogs, and the duck to reposition them
 - Night/day cycle based on your system clock
+- Occasional rain showers with atmospheric blue overlay
+- Villagers greet each other when they're nearby
 - 7 chickens that wander, peck, and occasionally lay eggs
-- Two dogs that roam the village (the cattledog herds chickens to the lower-left)
-- Drag a fishing-rod character to the lower-right pond to fish
+- Chickens hold a secret dance ritual every so often
+- Two dogs roam the village — the cattledog herds chickens to the lower-left corner
+- A duck that follows your agents around (prefers character2). Click it to honk.
+- Drag a villager to the lower-right pond to fish
+
+## Debug keys
+
+| Key | |
+|---|---|
+| `G` | Toggle navmesh overlay |
+| `R` | Trigger rain |
+| `D` | Trigger chicken dance ritual |
 
 ## Roadmap
 
