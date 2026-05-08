@@ -320,7 +320,8 @@ class VillageScene extends Phaser.Scene {
         g.strokeRect(x, y, tw, th);
 
         const label = this._txt(x + tw / 2, y + th / 2, `${c},${r}`, {
-          fontSize: '5px', color: '#ffffff', fontFamily: 'monospace',
+          fontSize: '8px', color: '#ffffff', fontFamily: 'monospace',
+          stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5);
         container.add(label);
       }
