@@ -1903,6 +1903,27 @@ class VillageScene extends Phaser.Scene {
       }
     }
 
+    // ── Creature separation nudge ─────────────────────────────────────────
+    // Push overlapping chickens and dogs apart each frame. KO'd chickens are
+    // excluded so they can pile up naturally at a fight scene.
+    const creatures = [...this.chickens, ...this.dogs];
+    const SEP = 20;
+    for (let i = 0; i < creatures.length; i++) {
+      for (let j = i + 1; j < creatures.length; j++) {
+        const a = creatures[i], b = creatures[j];
+        if (a._ko || b._ko) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist2 = dx * dx + dy * dy;
+        if (dist2 > 0 && dist2 < SEP * SEP) {
+          const dist = Math.sqrt(dist2);
+          const push = (SEP - dist) * 0.5;
+          const nx = dx / dist, ny = dy / dist;
+          a.x -= nx * push;  a.y -= ny * push;
+          b.x += nx * push;  b.y += ny * push;
+        }
+      }
+    }
+
   }
 
   // Set bubble text with a fade-out after `delay` ms (persist=true = no fade).

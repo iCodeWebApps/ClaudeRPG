@@ -1,6 +1,6 @@
 {
   "name": "claude-rpg",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Visualize Claude Code agents as villagers in a pixel art RPG",
   "main": "server/index.js",
   "bin": {
