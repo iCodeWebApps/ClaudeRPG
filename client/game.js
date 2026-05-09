@@ -2056,8 +2056,8 @@ class VillageScene extends Phaser.Scene {
   _endActiveCombat(combat) {
     this._activeCombats.delete(combat.attacker);
     combat.attacker._inCombat = combat.defender._inCombat = false;
-    if (!combat.attacker._ko) { combat.attacker._pinned = false; combat.attacker._resume?.(); }
-    if (!combat.defender._ko) { combat.defender._pinned = false; combat.defender._resume?.(); }
+    if (!combat.attacker._ko) { combat.attacker._pinned = false; combat.attacker._resume?.(); this._startChickenRegen(combat.attacker); }
+    if (!combat.defender._ko) { combat.defender._pinned = false; combat.defender._resume?.(); this._startChickenRegen(combat.defender); }
   }
 
   // A*-pathfinding walk to a specific tile.
@@ -2096,18 +2096,29 @@ class VillageScene extends Phaser.Scene {
       onComplete: () => ko.destroy(),
     });
 
-    // Gradual heal: 30 ticks × 2 s = 60 s back to full
+    this._startChickenRegen(chicken);
+  }
+
+  // Heal a chicken back to full over ~60 s. Works for both KO'd chickens
+  // (starting from 0) and walking-wounded survivors (starting from partial HP).
+  // Clears KO state and resumes wandering once full HP is reached.
+  _startChickenRegen(chicken) {
+    if (chicken._hp >= chicken._maxHp) return;
+    if (chicken._koTimer) { chicken._koTimer.remove(); chicken._koTimer = null; }
     const TICK_MS   = 2000;
     const hpPerTick = chicken._maxHp / 30;
     const tick = () => {
       chicken._hp = Math.min(chicken._maxHp, Math.round(chicken._hp + hpPerTick));
       this._updateChickenHpBar(chicken);
       if (chicken._hp >= chicken._maxHp) {
-        chicken._ko     = false;
-        chicken._pinned = false;
-        chicken.setAngle(0).clearTint();
-        this._updateChickenHpBar(chicken);
-        chicken._resume?.();
+        chicken._koTimer = null;
+        if (chicken._ko) {
+          chicken._ko     = false;
+          chicken._pinned = false;
+          chicken.setAngle(0).clearTint();
+          this._updateChickenHpBar(chicken);
+          chicken._resume?.();
+        }
       } else {
         chicken._koTimer = this.time.delayedCall(TICK_MS, tick);
       }
