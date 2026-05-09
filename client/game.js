@@ -279,14 +279,6 @@ class VillageScene extends Phaser.Scene {
     this.spawnCattleDog();
     this.spawnDuck();
 
-    // Hourly chicken ritual
-    this.time.addEvent({
-      delay: 60 * 60 * 1000,
-      loop: true,
-      callback: this.startRitual,
-      callbackScope: this,
-    });
-
     // Villager proximity greetings — checked every 2 seconds
     this.time.addEvent({
       delay: 2000,
@@ -353,7 +345,7 @@ class VillageScene extends Phaser.Scene {
 
     this.connectWebSocket();
 
-    this._scheduleDanceRitual();
+    this._scheduleRandomEvent();
 
     // G=navmesh, R=rain, D=dance ritual, S=summon skeleton boss
     this.input.keyboard.on('keydown-G', () => this.toggleNavGrid());
@@ -438,12 +430,6 @@ class VillageScene extends Phaser.Scene {
       emitting: false,
     }).setDepth(15);
 
-    this._scheduleRain();
-  }
-
-  _scheduleRain() {
-    const delay = Phaser.Math.Between(3 * 60 * 1000, 7 * 60 * 1000);
-    this.time.delayedCall(delay, () => this._startRain());
   }
 
   _startRain() {
@@ -456,7 +442,6 @@ class VillageScene extends Phaser.Scene {
   _stopRain() {
     this._rainEmitter.stop();
     this.tweens.add({ targets: this._rainOverlay, alpha: 0, duration: 2500, ease: 'Sine.Out' });
-    this._scheduleRain();
   }
 
 
@@ -1109,73 +1094,6 @@ class VillageScene extends Phaser.Scene {
     });
   }
 
-  startRitual() {
-    if (this.chickens.some(c => c._fleeing)) return;
-    const CENTER        = { x: 195, y: 385 }; // Town Green
-    const RADIUS        = 44;
-    const STEPS_PER_ROT = 14;
-    const ROTATIONS     = 2;
-    const STEP_MS       = 260;
-
-    // Stop normal behaviour — _fleeing blocks dog-avoidance logic too
-    for (const chicken of this.chickens) {
-      if (chicken._inCombat) continue;
-      this.tweens.killTweensOf(chicken);
-      chicken._fleeing = true;
-    }
-
-    this.chickens.forEach((chicken, i) => {
-      const baseAngle = (i / this.chickens.length) * Math.PI * 2;
-      const sx = CENTER.x + Math.cos(baseAngle) * RADIUS;
-      const sy = CENTER.y + Math.sin(baseAngle) * RADIUS;
-
-      // Gather to starting position
-      this.tweens.add({
-        targets: chicken, x: sx, y: sy,
-        duration: 1400, ease: 'Quad.Out',
-        onComplete: () => {
-          // Peck once on arrival
-          this.tweens.add({
-            targets: chicken, y: chicken.y + 4, duration: 110,
-            yoyo: true, repeat: 1,
-            onComplete: () => {
-              // Orbit for ROTATIONS full laps
-              const totalSteps = ROTATIONS * STEPS_PER_ROT;
-              let step = 0;
-
-              const orbit = () => {
-                step++;
-                if (step > totalSteps) {
-                  // Ritual complete — peck and scatter
-                  this.tweens.add({
-                    targets: chicken, y: chicken.y + 4, duration: 110,
-                    yoyo: true, repeat: 2,
-                    onComplete: () => {
-                      chicken._fleeing = false;
-                      chicken._wander();
-                    },
-                  });
-                  return;
-                }
-                const angle = baseAngle + (step / STEPS_PER_ROT) * Math.PI * 2;
-                const tx = CENTER.x + Math.cos(angle) * RADIUS;
-                const ty = CENTER.y + Math.sin(angle) * RADIUS;
-                chicken.setFlipX(tx > chicken.x);
-                this.tweens.add({
-                  targets: chicken, x: tx, y: ty,
-                  duration: STEP_MS, ease: 'Linear',
-                  onComplete: orbit,
-                });
-              };
-
-              orbit();
-            },
-          });
-        },
-      });
-    });
-  }
-
   // ── DANCE RITUAL ─────────────────────────────────────────────────────────
   startDanceRitual() {
     if (this.chickens.some(c => c._inRitual)) return;
@@ -1221,7 +1139,6 @@ class VillageScene extends Phaser.Scene {
                       chicken._inRitual = false;
                       chicken._wander();
                       done++;
-                      if (done === this.chickens.length) this._scheduleDanceRitual();
                     },
                   });
                   return;
@@ -1258,12 +1175,23 @@ class VillageScene extends Phaser.Scene {
       chicken._inRitual = false;
       chicken._wander();
     }
-    this._scheduleDanceRitual();
   }
 
-  _scheduleDanceRitual() {
-    const delay = Phaser.Math.Between(20 * 60 * 1000, 45 * 60 * 1000);
-    this.time.delayedCall(delay, () => this.startDanceRitual());
+  // ── RANDOM EVENT SYSTEM ──────────────────────────────────────────────────
+  // Add new entries here to extend the event pool. Each fires on its own
+  // internal guard (skeleton won't double-spawn, rain won't stack, etc.).
+  _fireRandomEvent() {
+    const events = [
+      () => this.startDanceRitual(),
+      () => this._startRain(),
+      () => this._spawnSkeleton(),
+    ];
+    events[Phaser.Math.Between(0, events.length - 1)]();
+    this._scheduleRandomEvent();
+  }
+
+  _scheduleRandomEvent() {
+    this.time.delayedCall(30 * 60 * 1000, () => this._fireRandomEvent());
   }
 
   pickWalkableTile(x, y, radius) {
