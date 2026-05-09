@@ -157,11 +157,11 @@ module.exports = function startWatcher(broadcast) {
   replayRecent(broadcast);
 
   // Watch for new files and changes.
-  const watcher = chokidar.watch(`${PROJECTS_DIR}/**/*.jsonl`, {
-    persistent:     true,
-    ignoreInitial:  true,   // existing files already seeded above
-    awaitWriteFinish: false,
-    usePolling:     false,
+  // chokidar 4 dropped glob support — watch the directory and filter by extension.
+  const watcher = chokidar.watch(PROJECTS_DIR, {
+    persistent:    true,
+    ignoreInitial: true,   // existing files already seeded above
+    ignored: (filePath, stats) => stats?.isFile() && !filePath.endsWith('.jsonl'),
   });
 
   watcher.on('add', (filePath) => {
