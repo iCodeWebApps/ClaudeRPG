@@ -825,6 +825,33 @@ class VillageScene extends Phaser.Scene {
       });
     };
 
+    const burpWalk = () => {
+      const c1entry = Object.entries(this.villagers).find(([, v]) => v.cfg.key === 'character1');
+      if (!c1entry) { wander(); return; }
+      const [, c1] = c1entry;
+      doodle._pinned = true;
+      // Walk to just beside character1
+      const tx = c1.sprite.x + (c1.sprite.x < 400 ? 18 : -18);
+      const ty = c1.sprite.y;
+      walkToPath(tx, ty, () => {
+        doodle.setFlipX(c1.sprite.x < doodle.x);
+        // Bounce then burp
+        this.tweens.add({
+          targets: doodle, y: doodle.y - 6, duration: 120, yoyo: true, repeat: 1,
+          onComplete: () => {
+            const burp = this._txt(doodle.x, doodle.y - 20, 'Buuurp! 💨', {
+              fontSize: '11px', color: '#aaff66', fontFamily: 'Arial', fontStyle: 'bold',
+              stroke: '#000000', strokeThickness: 3,
+            }).setOrigin(0.5, 1).setDepth(25);
+            this.tweens.add({ targets: burp, y: burp.y - 14, duration: 2200, ease: 'Quad.Out',
+              onComplete: () => burp.destroy() });
+            this.tweens.add({ targets: burp, alpha: 0, duration: 700, delay: 1500 });
+            this.time.delayedCall(2400, () => { doodle._pinned = false; wander(); });
+          },
+        });
+      });
+    };
+
     const eatEgg = (egg) => {
       if (doodle._walkTimer) { doodle._walkTimer.remove(); doodle._walkTimer = null; }
       doodle.setTexture('doodle');
@@ -838,7 +865,11 @@ class VillageScene extends Phaser.Scene {
           doodle._eggsEaten = (doodle._eggsEaten || 0) + 1;
           localStorage.setItem('clauderpg_eggsEaten', doodle._eggsEaten);
           fetch('/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eggsEaten: doodle._eggsEaten }) }).catch(() => {});
-          this.time.delayedCall(300, wander);
+          if (doodle._eggsEaten % 10 === 0) {
+            this.time.delayedCall(300, burpWalk);
+          } else {
+            this.time.delayedCall(300, wander);
+          }
         },
       });
     };
